@@ -8,14 +8,14 @@ class Transcript:
     """
 
     def __init__(self, segments: list[dict], file: str | None = None) -> None:
-        self.segments = segments   # native WhisperX dicts, mutated in place by stages
-        self.file     = file       # source episode name, for reload/sort
+        self.segments = segments  # native WhisperX dicts, mutated in place by stages
+        self.file = file  # source episode name, for reload/sort
 
     def render(self) -> str:
         """Speaker/character-labeled lines (plain text where no speaker is set)."""
         lines = []
         for seg in self.segments:
-            spk  = seg.get("speaker")
+            spk = seg.get("speaker")
             text = (seg.get("text") or "").strip()
             if not text:
                 continue
