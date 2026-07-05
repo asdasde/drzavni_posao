@@ -9,15 +9,18 @@ from .transcript import Transcript
 class MediaStore:
     """Indexes episodes on disk and reads/writes their transcripts. Audio is Episode's job."""
 
-    def __init__(self, audio_dir: str | Path, run_dir: str | Path) -> None:
-        self.audio_dir = Path(audio_dir)
-        self.run_dir   = Path(run_dir)
+    def __init__(self, audio_dir: str | Path, run_dir: str | Path,
+                 trim_start: float = 0.0, trim_end: float = 0.0) -> None:
+        self.audio_dir  = Path(audio_dir)
+        self.run_dir    = Path(run_dir)
+        self.trim_start = trim_start   # applied to every episode's audio (intro)
+        self.trim_end   = trim_end     # applied to every episode's audio (outro)
         self._index: dict[str, Episode] = self._build_index()
 
     def _build_index(self) -> dict[str, Episode]:
         return {ep.key: ep
                 for p in sorted(self.audio_dir.rglob("*.mp3"))
-                if (ep := Episode.from_path(p))}
+                if (ep := Episode.from_path(p, self.trim_start, self.trim_end))}
 
     def episode(self, key: str) -> Episode:
         """The Episode for *key*."""

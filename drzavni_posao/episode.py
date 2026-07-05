@@ -17,16 +17,20 @@ class Episode:
     episode_regex = re.compile(r"Ep\.(\d+)")
 
     def __init__(self, full_name: str, date: date, audio_path: Path, key: str,
-                 transcript: Transcript | None = None) -> None:
+                 transcript: Transcript | None = None,
+                 trim_start: float = 0.0, trim_end: float = 0.0) -> None:
         self.full_name  = full_name
         self.date       = date
         self.audio_path = audio_path
         self.key        = key
         self.transcript = transcript          # filled/refined by the pipeline stages
+        self.trim_start = trim_start          # seconds of intro to skip
+        self.trim_end   = trim_end            # seconds of outro to skip
         self._wav: np.ndarray | None = None   # lazily loaded, cached waveform
 
     @classmethod
-    def from_path(cls, path: str | Path) -> "Episode":
+    def from_path(cls, path: str | Path,
+                  trim_start: float = 0.0, trim_end: float = 0.0) -> "Episode":
         """Build an Episode by parsing *path*'s filename."""
         path = Path(path)
         stem = path.stem
@@ -43,23 +47,20 @@ class Episode:
             title = cls.date_regex.sub("", stem.removeprefix(cls.prefix))
             key   = re.sub(r"\s{2,}", " ", title).strip()
 
-        return cls(full_name=stem, date=date(year, month, day), audio_path=path, key=key)
+        return cls(full_name=stem, date=date(year, month, day), audio_path=path, key=key,
+                   trim_start=trim_start, trim_end=trim_end)
 
-    def audio(self, l_trim: float = 0.0, r_trim: float = 0.0) -> np.ndarray:
+    def audio(self) -> np.ndarray:
         """
-        The episode's waveform, loaded (and cached) on first access.
+        The episode's waveform (intro/outro trimmed), loaded and cached on first access.
 
-        The full waveform is cached; trimming is applied on the way out.
-
-        Parameters
-        ----------
-        l_trim : seconds to discard from the start (e.g. intro music).
-        r_trim : seconds to discard from the end  (e.g. outro music).
+        The full waveform is cached; trim_start/trim_end are applied on the way out,
+        so every pipeline stage sees the same frame of reference.
         """
         if self._wav is None:
             self._wav = whisperx.load_audio(str(self.audio_path))
-        start = int(l_trim * SR)
-        end   = -int(r_trim * SR) or None  # 0 → None (full length)
+        start = int(self.trim_start * SR)
+        end   = -int(self.trim_end * SR) or None  # 0 → None (full length)
         return self._wav[start:end]
 
     def clear_audio(self) -> None:
