@@ -1,9 +1,12 @@
 import json
+import logging
 from pathlib import Path
 from typing import Iterator
 
 from .episode import Episode
 from .transcript import Transcript
+
+logger = logging.getLogger(__name__)
 
 
 class MediaStore:
@@ -23,11 +26,13 @@ class MediaStore:
         self._index: dict[str, Episode] = self._build_index()
 
     def _build_index(self) -> dict[str, Episode]:
-        return {
+        index = {
             ep.key: ep
             for p in sorted(self.audio_dir.rglob("*.mp3"))
             if (ep := Episode.from_path(p, self.trim_start, self.trim_end))
         }
+        logger.info("Indexed %d episodes under %s", len(index), self.audio_dir)
+        return index
 
     def episode(self, key: str) -> Episode:
         """The Episode for *key*."""
@@ -78,6 +83,7 @@ class MediaStore:
                 ensure_ascii=False,
                 default=lambda o: o.item() if hasattr(o, "item") else str(o),
             )
+        logger.info("Saved transcript for episode %r to %s", episode.key, out_dir)
 
     def load(self, key: str, subdir: str = "") -> Transcript:
         """Read a saved transcript for episode *key*."""

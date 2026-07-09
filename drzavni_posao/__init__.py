@@ -1,4 +1,5 @@
 from .constants import SR
+from .diarizer import Diarizer, DiarizerConfig
 from .episode import Episode
 from .store import MediaStore
 from .transcriber import Transcriber, TranscriberConfig
@@ -11,4 +12,6 @@ __all__ = [
     "MediaStore",
     "Transcriber",
     "TranscriberConfig",
+    "Diarizer",
+    "DiarizerConfig",
 ]

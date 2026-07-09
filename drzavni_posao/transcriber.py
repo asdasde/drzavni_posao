@@ -1,4 +1,5 @@
 import gc
+import logging
 
 import torch
 import whisperx
@@ -6,6 +7,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from .episode import Episode
 from .transcript import Transcript
+
+logger = logging.getLogger(__name__)
 
 
 class TranscriberConfig(BaseModel):
@@ -35,13 +38,14 @@ class Transcriber:
             language=c.language,
             asr_options=c.asr_options,
         )
-        print(f"Loaded WhisperX '{c.model_name}' on {c.device}")
+        logger.info("Loaded WhisperX '%s' on %s", c.model_name, c.device)
         self.align_model, self.align_meta = whisperx.load_align_model(
             language_code=c.language, device=c.device, model_name=c.align_model_name
         )
 
     def run(self, episode: Episode) -> Episode:
         """Transcribe + align *episode*'s audio; set episode.transcript and return it."""
+        logger.info("Transcribing episode %r", episode.key)
         audio = episode.audio()
         result = self.asr.transcribe(audio, batch_size=self.config.batch_size)
         if self.align_model is not None:
@@ -54,10 +58,16 @@ class Transcriber:
                 return_char_alignments=False,
             )
         episode.transcript = Transcript(result["segments"], file=episode.full_name)
+        logger.info(
+            "Transcribed episode %r: %d segments",
+            episode.key,
+            len(episode.transcript.segments),
+        )
         return episode
 
     def free(self) -> None:
         """Release the models and clear the GPU cache."""
+        logger.debug("Freeing Transcriber models")
         self.asr = self.align_model = self.align_meta = None
         gc.collect()
         torch.cuda.empty_cache()

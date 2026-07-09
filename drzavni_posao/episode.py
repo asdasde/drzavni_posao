@@ -1,3 +1,4 @@
+import logging
 import re
 from datetime import date
 from pathlib import Path
@@ -7,6 +8,8 @@ import whisperx
 
 from .constants import SR
 from .transcript import Transcript
+
+logger = logging.getLogger(__name__)
 
 
 class Episode:
@@ -72,6 +75,9 @@ class Episode:
         so every pipeline stage sees the same frame of reference.
         """
         if self._wav is None:
+            logger.debug(
+                "Loading audio for episode %r from %s", self.key, self.audio_path
+            )
             self._wav = whisperx.load_audio(str(self.audio_path))
         start = int(self.trim_start * SR)
         end = -int(self.trim_end * SR) or None  # 0 → None (full length)
