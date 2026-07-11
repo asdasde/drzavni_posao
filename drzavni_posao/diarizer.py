@@ -61,11 +61,22 @@ class Diarizer:
             min_speakers=self.config.min_speakers,
             max_speakers=self.config.max_speakers,
         )
+        # Retain the raw pyannote turns (as plain dicts) so callers can inspect the
+        # actual speaker-change boundaries, independent of the word-level labels.
+        episode.diarization = [
+            {"start": float(t.start), "end": float(t.end), "speaker": t.speaker}
+            for t in diarize_segments.itertuples()
+        ]
         result = whisperx.assign_word_speakers(
             diarize_segments, {"segments": episode.transcript.segments}
         )
         episode.transcript.segments = result["segments"]
-        logger.info("Diarized episode %r: %d turns", episode.key, len(diarize_segments))
+        logger.info(
+            "Diarized episode %r: %d turns, %d speakers",
+            episode.key,
+            len(episode.diarization),
+            len({t["speaker"] for t in episode.diarization}),
+        )
         return episode
 
     def free(self) -> None:

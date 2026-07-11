@@ -36,6 +36,7 @@ class Episode:
         self.transcript = transcript  # filled/refined by the pipeline stages
         self.trim_start = trim_start  # seconds of intro to skip
         self.trim_end = trim_end  # seconds of outro to skip
+        self.diarization: list[dict] | None = None
         self._wav: np.ndarray | None = None  # lazily loaded, cached waveform
 
     @classmethod
