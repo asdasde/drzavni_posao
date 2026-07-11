@@ -14,12 +14,11 @@ logger = logging.getLogger(__name__)
 class EmbedderConfig(BaseModel):
     """Pyannote speaker-embedding model hyperparameters."""
 
-    embed_model: str = "pyannote/wespeaker-voxceleb-resnet34-LM"
+    embed_model: str = "pyannote/embedding"
     hf_token: str | None = None
     device: str = "cuda"
-    sample_rate: int = SR  
+    sample_rate: int = SR
     min_segment_seconds: float = 0.4
-    
 
 
 class Embedder:
@@ -35,7 +34,9 @@ class Embedder:
         model = Model.from_pretrained(
             config.embed_model, use_auth_token=config.hf_token
         )
-        self.model = Inference(model, window="whole", device=config.device)
+        self.model = Inference(
+            model, window="whole", device=torch.device(config.device)
+        )
         logger.info(
             "Loaded embedding model %r on %s", config.embed_model, config.device
         )
