@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 class EmbedderConfig(BaseModel):
     """Pyannote speaker-embedding model hyperparameters."""
 
-    embed_model: str = "pyannote/embedding"
+    embed_model: str = "pyannote/wespeaker-voxceleb-resnet34-LM"
     hf_token: str | None = None
     device: str = "cuda"
     sample_rate: int = SR

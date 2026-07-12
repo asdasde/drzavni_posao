@@ -5,6 +5,7 @@ import torch
 import whisperx
 from pydantic import BaseModel, ConfigDict, Field
 
+from .constants import CYRILLIC_TO_LATIN
 from .episode import Episode
 from .transcript import Transcript
 
@@ -57,6 +58,10 @@ class Transcriber:
                 self.config.device,
                 return_char_alignments=False,
             )
+        for segment in result["segments"]:
+            segment["text"] = segment["text"].translate(CYRILLIC_TO_LATIN)
+            for word in segment.get("words", []):
+                word["word"] = word["word"].translate(CYRILLIC_TO_LATIN)
         episode.transcript = Transcript(result["segments"], file=episode.full_name)
         logger.info(
             "Transcribed episode %r: %d segments",
