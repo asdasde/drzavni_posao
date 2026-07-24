@@ -7,7 +7,11 @@ requires-python = ">=3.12"
 dependencies = [
     "ipykernel>=7.3.0",
     "jupyter>=1.1.1",
+    "mlflow-skinny>=3.14.0",
     "pydantic>=2.13.4",
     "ruff>=0.15.20",
     "whisperx>=3.8.6",
 ]
+
+[[tool.uv.index]]
+url = "https://pypi-proxy.cloud.databricks.com/simple"
