@@ -36,6 +36,9 @@ def _configuration_params(configuration: Mapping[str, Any]) -> dict[str, str]:
     }
 
 
+_RESUMABLE_STATUSES = frozenset({"FINISHED", "FAILED", "KILLED", "RUNNING"})
+
+
 def _find_latest_matching_parent_run(
     configuration: Mapping[str, Any],
     experiment_name: str,
@@ -55,7 +58,7 @@ def _find_latest_matching_parent_run(
         (
             run
             for run in runs
-            if run.info.status in {"FINISHED", "FAILED", "KILLED"}
+            if run.info.status in _RESUMABLE_STATUSES
             and run.data.params == expected_params
         ),
         None,
