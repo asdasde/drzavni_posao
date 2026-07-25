@@ -11,6 +11,8 @@ from .transcript import Transcript
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_SERBIAN_ALIGN_MODEL = "classla/wav2vec2-xls-r-parlaspeech-hr"
+
 
 class TranscriberConfig(BaseModel):
     """WhisperX ASR + alignment hyperparameters."""
@@ -40,15 +42,27 @@ class Transcriber:
             asr_options=c.asr_options,
         )
         logger.info("Loaded WhisperX '%s' on %s", c.model_name, c.device)
+        align_model_name = c.align_model_name
+        if align_model_name is None and c.language == "sr":
+            align_model_name = DEFAULT_SERBIAN_ALIGN_MODEL
         self.align_model, self.align_meta = whisperx.load_align_model(
-            language_code=c.language, device=c.device, model_name=c.align_model_name
+            language_code=c.language,
+            device=c.device,
+            model_name=align_model_name,
         )
+        # WhisperX converts spaces to "|" before forced alignment. Classla's
+        # tokenizer uses a literal space token, so expose it under both names.
+        dictionary = self.align_meta.get("dictionary", {})
+        if "|" not in dictionary and " " in dictionary:
+            dictionary["|"] = dictionary[" "]
 
     def run(self, episode: Episode) -> Episode:
         """Transcribe + align *episode*'s audio; set episode.transcript and return it."""
         logger.info("Transcribing episode %r", episode.key)
         audio = episode.audio()
         result = self.asr.transcribe(audio, batch_size=self.config.batch_size)
+        for segment in result["segments"]:
+            segment["text"] = segment["text"].translate(CYRILLIC_TO_LATIN)
         if self.align_model is not None:
             result = whisperx.align(
                 result["segments"],
@@ -59,7 +73,6 @@ class Transcriber:
                 return_char_alignments=False,
             )
         for segment in result["segments"]:
-            segment["text"] = segment["text"].translate(CYRILLIC_TO_LATIN)
             for word in segment.get("words", []):
                 word["word"] = word["word"].translate(CYRILLIC_TO_LATIN)
         episode.transcript = Transcript(result["segments"], file=episode.full_name)
