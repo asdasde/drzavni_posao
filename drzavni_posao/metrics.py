@@ -109,3 +109,26 @@ def diarization_metrics(episode: Episode) -> dict[str, int]:
         "unassigned_words": sum("speaker" not in word for word in words),
         "mixed_speaker_segments": mixed_segments,
     }
+
+
+def assignment_metrics(
+    episode: Episode,
+    anonymous_label: str = "[anonymous]",
+) -> dict[str, float]:
+    labels = [
+        segment.get("speaker")
+        for segment in episode.transcript.segments
+    ]
+    named = [
+        label
+        for label in labels
+        if label and label != anonymous_label
+    ]
+
+    return {
+        "named_segments": len(named),
+        "anonymous_segments": len(labels) - len(named),
+        "anonymous_share": (len(labels) - len(named)) / len(labels) if labels else 0.0,
+        "assigned_characters": len(set(named)),
+    }
+
