@@ -39,10 +39,18 @@ class Stage(StrEnum):
         return stages[index] if index < len(stages) else None
 
     @property
+    def prerequisites(self) -> frozenset[Stage]:
+        # Diarization is optional: assignment can label segments one-by-one
+        # when no speaker clusters exist.
+        if self is Stage.ASR:
+            return frozenset()
+        return frozenset({Stage.ASR})
+
+    @property
     def config_keys(self) -> tuple[str, ...]:
-        stages = tuple(type(self))
-        prefix = stages[: stages.index(self) + 1]
-        return ("audio", *(stage._config_key for stage in prefix))
+        stages = self.prerequisites | {self}
+        ordered = tuple(stage for stage in type(self) if stage in stages)
+        return ("audio", *(stage._config_key for stage in ordered))
 
     @property
     def required_artifacts(self) -> frozenset[str]:
@@ -243,11 +251,9 @@ class MlflowTracker:
     ) -> tuple[Stage, ...]:
         requested = cls._validate_stages(requested)
         available = set(completed)
-        pipeline = tuple(Stage)
         pending = []
         for stage in requested:
-            prerequisites = set(pipeline[: pipeline.index(stage)])
-            missing = prerequisites - available
+            missing = stage.prerequisites - available
             if missing:
                 raise ValueError(
                     f"Stage {stage!r} requires completed stages: "

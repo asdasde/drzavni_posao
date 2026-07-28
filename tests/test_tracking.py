@@ -91,6 +91,11 @@ class MlflowTrackerTests(unittest.TestCase):
             tracking.Stage.DIAR.config_keys,
             ("audio", "asr", "diarization"),
         )
+        self.assertEqual(
+            tracking.Stage.ASSIGN.config_keys,
+            ("audio", "asr", "character_assignment"),
+        )
+        self.assertEqual(tracking.Stage.ASSIGN.prerequisites, frozenset({Stage.ASR}))
         for stage in tracking.Stage:
             self.assertEqual(
                 stage.required_artifacts,
@@ -194,6 +199,13 @@ class MlflowTrackerTests(unittest.TestCase):
                 requested=(Stage.DIAR, Stage.ASSIGN),
             ),
             ("diar", "assign"),
+        )
+        self.assertEqual(
+            self.tracker.pending_stages(
+                completed={Stage.ASR},
+                requested=(Stage.ASSIGN,),
+            ),
+            ("assign",),
         )
         self.assertEqual(
             self.tracker.pending_stages(
