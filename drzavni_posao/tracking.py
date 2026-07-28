@@ -40,8 +40,6 @@ class Stage(StrEnum):
 
     @property
     def prerequisites(self) -> frozenset[Stage]:
-        # Diarization is optional: assignment can label segments one-by-one
-        # when no speaker clusters exist.
         if self is Stage.ASR:
             return frozenset()
         return frozenset({Stage.ASR})
