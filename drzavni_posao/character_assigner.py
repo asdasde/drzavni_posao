@@ -23,7 +23,7 @@ class CharacterAssigner:
     """Assigns character names to transcript segments by voice.
 
     Embeds each segment and matches it against an enrolled `Gallery`. Runs in
-    one of two modes, chosen by whether the Diarizer has already run:
+    one of two modes, chosen by whether the transcript has speaker labels:
 
       no diarization  → each segment matched independently (method 3).
       diarization set → segments are pooled per pyannote speaker into one
@@ -55,7 +55,7 @@ class CharacterAssigner:
         segments = episode.transcript.segments
         audio = episode.audio()
 
-        if episode.diarization is None:
+        if not any(segment.get("speaker") for segment in segments):
             logger.info("Assigning characters in %r (per-segment)", episode.key)
             self._assign_per_segment(segments, audio)
         else:

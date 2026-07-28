@@ -5,6 +5,7 @@ from .embedder import Embedder, EmbedderConfig
 from .episode import Episode
 from .gallery import Gallery
 from .store import MediaStore
+from .tracking import MlflowTracker, Stage
 from .transcriber import Transcriber, TranscriberConfig
 from .transcript import Transcript
 
@@ -22,4 +23,6 @@ __all__ = [
     "Gallery",
     "CharacterAssigner",
     "CharacterAssignerConfig",
+    "MlflowTracker",
+    "Stage",
 ]
