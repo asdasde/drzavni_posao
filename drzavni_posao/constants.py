@@ -1,4 +1,5 @@
 SR: int = 16_000  # WhisperX audio sample rate
+ANONYMOUS_LABEL = "[anonymous]"
 
 # Serbian Cyrillic → Latin. Whisper flips script mid-transcript; the Transcriber
 # normalizes to Latin once. Digraphs (љ/њ/џ) map to multi-char values, which

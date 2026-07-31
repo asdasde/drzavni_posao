@@ -2,6 +2,7 @@ import re
 
 import numpy as np
 
+from .constants import ANONYMOUS_LABEL
 from .episode import Episode
 
 
@@ -111,10 +112,7 @@ def diarization_metrics(episode: Episode) -> dict[str, int]:
     }
 
 
-def assignment_metrics(
-    episode: Episode,
-    anonymous_label: str = "[anonymous]",
-) -> dict[str, float]:
+def assignment_metrics(episode: Episode) -> dict[str, float]:
     labels = [
         segment.get("speaker")
         for segment in episode.transcript.segments
@@ -122,7 +120,7 @@ def assignment_metrics(
     named = [
         label
         for label in labels
-        if label and label != anonymous_label
+        if label and label != ANONYMOUS_LABEL
     ]
 
     return {

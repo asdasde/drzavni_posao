@@ -5,18 +5,21 @@ import numpy as np
 import torch
 from pydantic import BaseModel
 
-from .embedder import Embedder
+from .constants import ANONYMOUS_LABEL
+from .embedder import Embedder, EmbedderConfig
 from .episode import Episode
 from .gallery import Gallery
+from .store import MediaStore
 
 logger = logging.getLogger(__name__)
 
 
 class CharacterAssignerConfig(BaseModel):
-    """Voice-matching hyperparameters."""
+    """Complete character-assignment configuration."""
 
     min_similarity: float  # cosine cutoff; a best match below this → anonymous
-    anonymous_label: str = "[anonymous]"
+    embedder: EmbedderConfig
+    speaker_samples: dict[str, list[dict]]
 
 
 class CharacterAssigner:
@@ -35,14 +38,20 @@ class CharacterAssigner:
     """
 
     def __init__(
-        self, config: CharacterAssignerConfig, embedder: Embedder, gallery: Gallery
+        self,
+        config: CharacterAssignerConfig,
+        store: MediaStore,
     ) -> None:
         self.config = config
-        self.embedder = embedder
-        self.gallery = gallery
+        self.embedder = Embedder(config.embedder)
+        self.gallery = Gallery.from_clips(
+            config.speaker_samples,
+            self.embedder,
+            store,
+        )
         logger.info(
             "CharacterAssigner ready: %d characters, min_similarity=%.2f",
-            len(gallery.names),
+            len(self.gallery.names),
             config.min_similarity,
         )
 
@@ -87,7 +96,7 @@ class CharacterAssigner:
         return (
             name
             if similarity >= self.config.min_similarity
-            else self.config.anonymous_label
+            else ANONYMOUS_LABEL
         )
 
     def _embed_segment(self, segment: dict, audio: np.ndarray) -> np.ndarray | None:
@@ -105,7 +114,7 @@ class CharacterAssigner:
         for segment in segments:
             vector = self._embed_segment(segment, audio)
             if vector is None:
-                segment["speaker"] = self.config.anonymous_label
+                segment["speaker"] = ANONYMOUS_LABEL
                 continue
             embeddable.append(segment)
             queries.append(vector)
@@ -124,7 +133,7 @@ class CharacterAssigner:
         for segment in segments:
             speaker = segment.get("speaker")
             if speaker is None:
-                segment["speaker"] = self.config.anonymous_label
+                segment["speaker"] = ANONYMOUS_LABEL
                 continue
             vector = self._embed_segment(segment, audio)
             if vector is not None:
