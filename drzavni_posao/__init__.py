@@ -4,6 +4,7 @@ from .diarizer import Diarizer, DiarizerConfig
 from .embedder import Embedder, EmbedderConfig
 from .episode import Episode
 from .gallery import Gallery
+from .pipeline import PipelineConfig, run_pipeline
 from .store import MediaStore
 from .tracking import MlflowTracker, Stage
 from .transcriber import Transcriber, TranscriberConfig
@@ -21,6 +22,8 @@ __all__ = [
     "Embedder",
     "EmbedderConfig",
     "Gallery",
+    "PipelineConfig",
+    "run_pipeline",
     "CharacterAssigner",
     "CharacterAssignerConfig",
     "MlflowTracker",
