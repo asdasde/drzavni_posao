@@ -21,16 +21,18 @@ from .transcript import Transcript
 logger = logging.getLogger(__name__)
 
 
-class Stage(StrEnum):
-    def __new__(cls, value: str, config_key: str):
-        member = str.__new__(cls, value)
-        member._value_ = value
-        member._config_key = config_key
-        return member
+class DuplicateConfigurationError(RuntimeError):
+    pass
 
-    ASR = ("asr", "asr")
-    DIAR = ("diar", "diarization")
-    ASSIGN = ("assign", "character_assignment")
+
+class DuplicateEpisodeRunError(RuntimeError):
+    pass
+
+
+class Stage(StrEnum):
+    TRANSCRIPTION = "transcription"
+    DIARIZATION = "diarization"
+    CHARACTER_ASSIGNER = "character_assigner"
 
     @property
     def next(self) -> Stage | None:
@@ -40,15 +42,15 @@ class Stage(StrEnum):
 
     @property
     def prerequisites(self) -> frozenset[Stage]:
-        if self is Stage.ASR:
+        if self is Stage.TRANSCRIPTION:
             return frozenset()
-        return frozenset({Stage.ASR})
+        return frozenset({Stage.TRANSCRIPTION})
 
     @property
     def config_keys(self) -> tuple[str, ...]:
         stages = self.prerequisites | {self}
         ordered = tuple(stage for stage in type(self) if stage in stages)
-        return ("audio", *(stage._config_key for stage in ordered))
+        return ("audio", *(stage.value for stage in ordered))
 
     @property
     def required_artifacts(self) -> frozenset[str]:
@@ -100,31 +102,49 @@ class MlflowTracker:
             )
             return json.loads(Path(path).read_text(encoding="utf-8"))
 
-    def _validate_configuration(
+    def _get_or_create_run(
         self,
-        run_id: str,
+        name: str,
         configuration: Mapping[str, Any],
-    ) -> None:
-        if self._configuration(run_id) != configuration:
-            raise ValueError(
-                f"configuration does not match MLflow run {run_id}"
-            )
-
-    def _matching_parent(self, configuration: Mapping[str, Any]):
+    ) -> str:
+        config_id = configuration_id(configuration)
         experiment = self.client.get_experiment_by_name(self.experiment_name)
         if experiment is None:
-            return None
-        expected = _configuration_params(configuration)
+            raise ValueError(f"Unknown experiment {self.experiment_name}")
+
         runs = self.client.search_runs(
-            experiment_ids=[experiment.experiment_id],
-            filter_string="tags.run_level = 'configuration'",
-            max_results=1000,
+            [experiment.experiment_id],
+            (
+                "tags.run_level = 'configuration' "
+                f"AND tags.config_id = '{config_id}'"
+            ),
+            max_results=2,
             order_by=["attributes.start_time DESC"],
         )
-        return next(
-            (run for run in runs if run.data.params == expected),
-            None,
+        if len(runs) > 1:
+            run_ids = [run.info.run_id for run in runs]
+            raise DuplicateConfigurationError(
+                f"Multiple parent runs have config_id {config_id}: {run_ids}"
+            )
+        if runs:
+            return runs[0].info.run_id
+
+        run = self.client.create_run(
+            experiment.experiment_id,
+            run_name=name,
+            tags={
+                "run_level": "configuration",
+                "config_id": config_id,
+            },
         )
+        for key, value in _flatten_params(configuration).items():
+            self.client.log_param(run.info.run_id, key, value)
+        self.client.log_dict(
+            run.info.run_id,
+            dict(configuration),
+            "config.json",
+        )
+        return run.info.run_id
 
     def _stage_tag(self, run_id: str, requested: tuple[Stage, ...]) -> str:
         current = self.client.get_run(run_id).data.tags.get("stages", "")
@@ -141,8 +161,6 @@ class MlflowTracker:
         *,
         stages: Iterable[Stage],
         tags: Mapping[str, Any] | None = None,
-        run_id: str | None = None,
-        resume_matching_run: bool = False,
     ):
         """Start or resume one exact configuration-level run."""
         if mlflow.active_run() is not None:
@@ -152,60 +170,68 @@ class MlflowTracker:
 
         requested = self._validate_stages(stages)
         mlflow.set_experiment(self.experiment_name)
-        selected = None
-        if run_id is not None:
-            selected = self.client.get_run(run_id)
-            if selected.data.tags.get("run_level") != "configuration":
-                raise ValueError(f"Run {run_id} is not a configuration run")
-            self._validate_configuration(run_id, configuration)
-        elif resume_matching_run:
-            selected = self._matching_parent(configuration)
+        run_id = self._get_or_create_run(name, configuration)
 
-        if selected is not None:
-            run_id = selected.info.run_id
-            logger.info("Resuming parent run: %s", run_id)
-            with mlflow.start_run(run_id=run_id):
-                mlflow.set_tags(
-                    {
-                        **(tags or {}),
-                        "stages": self._stage_tag(run_id, requested),
-                    }
-                )
-                yield run_id
-            return
-
-        with mlflow.start_run(run_name=name) as run:
+        logger.info("Using parent run: %s", run_id)
+        with mlflow.start_run(run_id=run_id):
             mlflow.set_tags(
                 {
-                    "run_level": "configuration",
-                    "stages": ",".join(requested),
                     **(tags or {}),
+                    "stages": self._stage_tag(run_id, requested),
                 }
             )
-            mlflow.log_params(_flatten_params(configuration))
-            mlflow.log_dict(dict(configuration), "config.json")
-            yield run.info.run_id
+            yield run_id
 
     def _child_runs(self, parent_run_id: str):
         parent = self.client.get_run(parent_run_id)
         return self.client.search_runs(
             experiment_ids=[parent.info.experiment_id],
             filter_string=(
-                f"tags.mlflow.parentRunId = '{parent_run_id}'"
+                f"tags.mlflow.parentRunId = '{parent_run_id}' "
+                "AND tags.run_level = 'episode'"
             ),
             max_results=1000,
             order_by=["attributes.start_time DESC"],
         )
 
-    def episode_states(
+    def _episode_run_id(
+        self,
+        parent_run_id: str,
+        episode_key: str,
+    ) -> str | None:
+        parent = self.client.get_run(parent_run_id)
+        runs = self.client.search_runs(
+            experiment_ids=[parent.info.experiment_id],
+            filter_string=(
+                f"tags.mlflow.parentRunId = '{parent_run_id}' "
+                "AND tags.run_level = 'episode' "
+                f"AND tags.episode_key = '{episode_key}'"
+            ),
+            max_results=2,
+        )
+        if len(runs) > 1:
+            run_ids = [run.info.run_id for run in runs]
+            raise DuplicateEpisodeRunError(
+                f"Multiple child runs exist for episode {episode_key!r}: "
+                f"{run_ids}"
+            )
+        return runs[0].info.run_id if runs else None
+
+    def episode_run_states(
         self,
         parent_run_id: str,
     ) -> dict[str, EpisodeRunState]:
         states = {}
         for run in self._child_runs(parent_run_id):
             episode_key = run.data.tags.get("episode_key")
-            if episode_key is None or episode_key in states:
+            if episode_key is None:
                 continue
+            if episode_key in states:
+                run_ids = [states[episode_key].run_id, run.info.run_id]
+                raise DuplicateEpisodeRunError(
+                    f"Multiple child runs exist for episode {episode_key!r}: "
+                    f"{run_ids}"
+                )
             completed = {
                 Stage(key.removeprefix("stage."))
                 for key, value in run.data.tags.items()
@@ -218,21 +244,21 @@ class MlflowTracker:
         return states
 
     @contextmanager
-    def episode_run(
-        self,
-        episode_key: str,
-        run_id: str | None = None,
-    ):
+    def episode_run(self, episode_key: str):
+        parent = mlflow.active_run()
+        if parent is None:
+            raise RuntimeError("Episode runs require an active parent run")
+
+        run_id = self._episode_run_id(parent.info.run_id, episode_key)
+        if run_id is not None:
+            with mlflow.start_run(run_id=run_id, nested=True):
+                yield
+            return
+
         tags = {
             "run_level": "episode",
             "episode_key": str(episode_key),
         }
-        if run_id is not None:
-            with mlflow.start_run(run_id=run_id, nested=True):
-                mlflow.set_tags(tags)
-                yield
-            return
-
         with mlflow.start_run(
             run_name=f"ep-{episode_key}",
             nested=True,
@@ -303,7 +329,7 @@ class MlflowTracker:
     def log_parent_averages(self, parent_run_id: str) -> None:
         metric_sets = [
             dict(self.client.get_run(state.run_id).data.metrics)
-            for state in self.episode_states(parent_run_id).values()
+            for state in self.episode_run_states(parent_run_id).values()
         ]
         metric_names = {
             name for metrics in metric_sets for name in metrics
@@ -342,44 +368,12 @@ class MlflowTracker:
             return {}
         return {
             episode_key: run.data.metrics[metric]
-            for episode_key, state in self.episode_states(
+            for episode_key, state in self.episode_run_states(
                 parents[0].info.run_id
             ).items()
             if metric
             in (run := self.client.get_run(state.run_id)).data.metrics
         }
-
-    def _fork_key(
-        self,
-        source_run_id: str,
-        name: str,
-        configuration: Mapping[str, Any],
-        copy_until: Stage,
-    ) -> str:
-        identity = json.dumps(
-            {
-                "source_run_id": source_run_id,
-                "name": name,
-                "configuration": configuration,
-                "copy_until": copy_until,
-            },
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-        )
-        return hashlib.sha256(identity.encode()).hexdigest()
-
-    def _existing_fork(self, fork_key: str):
-        experiment = self.client.get_experiment_by_name(self.experiment_name)
-        if experiment is None:
-            return None
-        runs = self.client.search_runs(
-            [experiment.experiment_id],
-            f"tags.fork.key = '{fork_key}'",
-            max_results=1,
-            order_by=["attributes.start_time DESC"],
-        )
-        return runs[0] if runs else None
 
     def _validate_fork_configuration(
         self,
@@ -455,17 +449,8 @@ class MlflowTracker:
             configuration,
             copy_until,
         )
-        fork_key = self._fork_key(
-            source_run_id,
-            name,
-            configuration,
-            copy_until,
-        )
-        existing = self._existing_fork(fork_key)
-        target_run_id = existing.info.run_id if existing else None
-        source_states = self.episode_states(source_run_id)
+        source_states = self.episode_run_states(source_run_id)
         fork_tags = {
-            "fork.key": fork_key,
             "source.run_id": source_run_id,
             "copy_until": copy_until,
         }
@@ -475,19 +460,15 @@ class MlflowTracker:
             configuration,
             stages=prefix,
             tags=fork_tags,
-            run_id=target_run_id,
         ) as target_run_id:
-            target_states = self.episode_states(target_run_id)
+            target_states = self.episode_run_states(target_run_id)
             for episode_key, source_state in source_states.items():
                 target_state = target_states.get(episode_key)
                 target_completed = set(
                     target_state.completed_stages if target_state else ()
                 )
                 blocked = False
-                with self.episode_run(
-                    episode_key,
-                    target_state.run_id if target_state else None,
-                ):
+                with self.episode_run(episode_key):
                     mlflow.set_tag(
                         "source.episode_run_id",
                         source_state.run_id,
@@ -518,11 +499,14 @@ def _flatten_params(value: Any, prefix: str = "") -> dict[str, Any]:
     return flattened
 
 
-def _configuration_params(configuration: Mapping[str, Any]) -> dict[str, str]:
-    return {
-        key: str(value)
-        for key, value in _flatten_params(configuration).items()
-    }
+def configuration_id(configuration: Mapping[str, Any]) -> str:
+    canonical = json.dumps(
+        configuration,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(canonical.encode()).hexdigest()
 
 
 def _finite_metrics(metrics: Mapping[str, Any]) -> dict[str, float]:
