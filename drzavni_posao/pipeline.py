@@ -88,6 +88,15 @@ class PipelineConfig(BaseModel):
         )
         return f"{'-'.join(parts)}-{config_id[:8]}"
 
+    def runner_for(self, stage: Stage, media: MediaStore):
+        match stage:
+            case Stage.TRANSCRIPTION:
+                return Transcriber(self.transcription)
+            case Stage.DIARIZATION:
+                return Diarizer(self.diarization)
+            case Stage.CHARACTER_ASSIGNER:
+                return CharacterAssigner(self.character_assigner, media)
+
 
 def run_pipeline(
     tracker: MlflowTracker,
@@ -119,7 +128,7 @@ def run_pipeline(
     with tracker.pipeline_run(
         run_name,
         configuration,
-        stages=requested,
+        stages=set(requested),
         tags=tags,
     ) as parent_run_id:
         states = tracker.episode_run_states(parent_run_id)
@@ -132,7 +141,7 @@ def run_pipeline(
             )
             pending = tracker.pending_stages(
                 completed=completed,
-                requested=requested,
+                requested=set(requested),
             )
             if pending:
                 todo.append((episode_key, state, pending))
@@ -146,32 +155,12 @@ def run_pipeline(
             for _, _, pending in todo
             for stage in pending
         }
-        metrics_for = {
-            Stage.TRANSCRIPTION: lambda episode: (
-                alignment_metrics(episode)
-                | repetition_metrics(episode)
-            ),
-            Stage.DIARIZATION: diarization_metrics,
-            Stage.CHARACTER_ASSIGNER: assignment_metrics,
-        }
-        runner_factories = {
-            Stage.TRANSCRIPTION: lambda: Transcriber(
-                config.transcription
-            ),
-            Stage.DIARIZATION: lambda: Diarizer(
-                config.diarization
-            ),
-            Stage.CHARACTER_ASSIGNER: lambda: CharacterAssigner(
-                config.character_assigner,
-                media,
-            ),
-        }
         runners = {}
 
         try:
             for stage in config.stages:
                 if stage in needed:
-                    runners[stage] = runner_factories[stage]()
+                    runners[stage] = config.runner_for(stage, media)
 
             for episode_key, state, pending in todo:
                 episode = None
@@ -194,7 +183,7 @@ def run_pipeline(
                             tracker.log_stage(
                                 episode,
                                 stage,
-                                metrics_for[stage](episode),
+                                metrics_for(stage, episode),
                             )
 
                         media.save(episode, subdir=run_name)
@@ -212,6 +201,16 @@ def run_pipeline(
             tracker.log_parent_averages(parent_run_id)
 
     return parent_run_id
+
+
+def metrics_for(stage: Stage, episode) -> dict[str, Any]:
+    match stage:
+        case Stage.TRANSCRIPTION:
+            return alignment_metrics(episode) | repetition_metrics(episode)
+        case Stage.DIARIZATION:
+            return diarization_metrics(episode)
+        case Stage.CHARACTER_ASSIGNER:
+            return assignment_metrics(episode)
 
 
 def _slug(value: str) -> str:

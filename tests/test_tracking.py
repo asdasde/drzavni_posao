@@ -128,13 +128,13 @@ class MlflowTrackerTests(unittest.TestCase):
         with self.tracker.pipeline_run(
             "first",
             configuration,
-            stages=(Stage.TRANSCRIPTION,),
+            stages={Stage.TRANSCRIPTION},
         ) as first:
             pass
         with self.tracker.pipeline_run(
             "different-display-name",
             reordered,
-            stages=(Stage.TRANSCRIPTION,),
+            stages={Stage.TRANSCRIPTION},
         ) as resumed:
             pass
 
@@ -146,13 +146,13 @@ class MlflowTrackerTests(unittest.TestCase):
         with self.tracker.pipeline_run(
             "first",
             self.configuration(),
-            stages=(Stage.TRANSCRIPTION,),
+            stages={Stage.TRANSCRIPTION},
         ) as first:
             pass
         with self.tracker.pipeline_run(
             "changed",
             self.configuration(transcription_model="other"),
-            stages=(Stage.TRANSCRIPTION,),
+            stages={Stage.TRANSCRIPTION},
         ) as changed:
             pass
 
@@ -163,7 +163,7 @@ class MlflowTrackerTests(unittest.TestCase):
         with self.tracker.pipeline_run(
             "source",
             configuration,
-            stages=(Stage.TRANSCRIPTION, Stage.DIARIZATION),
+            stages={Stage.TRANSCRIPTION, Stage.DIARIZATION},
         ) as parent_run_id:
             with mlflow.start_run(
                 run_name="stale",
@@ -191,7 +191,7 @@ class MlflowTrackerTests(unittest.TestCase):
         with self.tracker.pipeline_run(
             "parent",
             self.configuration(),
-            stages=(Stage.TRANSCRIPTION,),
+            stages={Stage.TRANSCRIPTION},
         ) as parent_run_id:
             with self.tracker.episode_run("1"):
                 first_run_id = mlflow.active_run().info.run_id
@@ -209,7 +209,7 @@ class MlflowTrackerTests(unittest.TestCase):
         with self.tracker.pipeline_run(
             "source",
             configuration,
-            stages=(Stage.TRANSCRIPTION,),
+            stages={Stage.TRANSCRIPTION},
         ) as parent_run_id:
             with self.tracker.episode_run("1"):
                 result = self.tracker.log_stage(
@@ -236,44 +236,37 @@ class MlflowTrackerTests(unittest.TestCase):
         self.assertEqual(
             self.tracker.pending_stages(
                 completed={Stage.TRANSCRIPTION},
-                requested=(
+                requested={
                     Stage.DIARIZATION,
                     Stage.CHARACTER_ASSIGNER,
-                ),
+                },
             ),
             ("diarization", "character_assigner"),
         )
         self.assertEqual(
             self.tracker.pending_stages(
                 completed={Stage.TRANSCRIPTION},
-                requested=(Stage.CHARACTER_ASSIGNER,),
+                requested={Stage.CHARACTER_ASSIGNER},
             ),
             ("character_assigner",),
         )
         self.assertEqual(
             self.tracker.pending_stages(
                 completed={Stage.TRANSCRIPTION, Stage.DIARIZATION},
-                requested=(
+                requested={
                     Stage.DIARIZATION,
                     Stage.CHARACTER_ASSIGNER,
-                ),
+                },
             ),
             ("character_assigner",),
         )
         with self.assertRaisesRegex(ValueError, "transcription"):
             self.tracker.pending_stages(
                 completed=set(),
-                requested=(
+                requested={
                     Stage.DIARIZATION,
                     Stage.CHARACTER_ASSIGNER,
-                ),
-            )
-
-    def test_string_stage_names_are_rejected(self):
-        with self.assertRaises(TypeError):
-            self.tracker.pending_stages(
-                completed=set(),
-                requested=("transcription",),
+                },
             )
 
     def test_fork_run_copies_only_validated_completed_prefix_and_is_idempotent(self):
@@ -285,7 +278,7 @@ class MlflowTrackerTests(unittest.TestCase):
         with self.tracker.pipeline_run(
             "source",
             source_configuration,
-            stages=(Stage.TRANSCRIPTION,),
+            stages={Stage.TRANSCRIPTION},
         ) as source_run_id:
             with self.tracker.episode_run("1"):
                 self.tracker.log_stage(
@@ -337,7 +330,7 @@ class MlflowTrackerTests(unittest.TestCase):
         with self.tracker.pipeline_run(
             "derived",
             target_configuration,
-            stages=(Stage.DIARIZATION, Stage.CHARACTER_ASSIGNER),
+            stages={Stage.DIARIZATION, Stage.CHARACTER_ASSIGNER},
         ) as resumed:
             self.assertEqual(resumed, target_run_id)
 
@@ -346,7 +339,7 @@ class MlflowTrackerTests(unittest.TestCase):
         with self.tracker.pipeline_run(
             "source",
             source_configuration,
-            stages=(Stage.TRANSCRIPTION,),
+            stages={Stage.TRANSCRIPTION},
         ) as source_run_id:
             pass
 
@@ -363,7 +356,7 @@ class MlflowTrackerTests(unittest.TestCase):
         with self.tracker.pipeline_run(
             "source",
             configuration,
-            stages=(Stage.TRANSCRIPTION,),
+            stages={Stage.TRANSCRIPTION},
         ) as parent_run_id:
             for key, count in (("1", 2), ("2", 4)):
                 with self.tracker.episode_run(key):

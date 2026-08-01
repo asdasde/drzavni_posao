@@ -4,7 +4,7 @@ import json
 import hashlib
 import logging
 import math
-from collections.abc import Collection, Iterable, Mapping
+from collections.abc import Collection, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
 from enum import StrEnum
@@ -77,22 +77,6 @@ class MlflowTracker:
         self.experiment_name = experiment_name
         self.client = client or MlflowClient()
 
-    @classmethod
-    def _validate_stages(
-        cls,
-        stages: Iterable[Stage],
-    ) -> tuple[Stage, ...]:
-        stages = tuple(stages)
-        if not all(isinstance(stage, Stage) for stage in stages):
-            raise TypeError(f"Stages must be Stage members: {stages}")
-        if len(set(stages)) != len(stages):
-            raise ValueError(f"Duplicate stages are not allowed: {stages}")
-        pipeline = tuple(Stage)
-        positions = [pipeline.index(stage) for stage in stages]
-        if positions != sorted(positions):
-            raise ValueError(f"Stages must follow pipeline order: {pipeline}")
-        return stages
-
     def _configuration(self, run_id: str) -> dict[str, Any]:
         with TemporaryDirectory() as directory:
             path = self.client.download_artifacts(
@@ -146,7 +130,7 @@ class MlflowTracker:
         )
         return run.info.run_id
 
-    def _stage_tag(self, run_id: str, requested: tuple[Stage, ...]) -> str:
+    def _stage_tag(self, run_id: str, requested: set[Stage]) -> str:
         current = self.client.get_run(run_id).data.tags.get("stages", "")
         included = {
             Stage(stage) for stage in current.split(",") if stage
@@ -159,7 +143,7 @@ class MlflowTracker:
         name: str,
         configuration: Mapping[str, Any],
         *,
-        stages: Iterable[Stage],
+        stages: set[Stage],
         tags: Mapping[str, Any] | None = None,
     ):
         """Start or resume one exact configuration-level run."""
@@ -168,7 +152,6 @@ class MlflowTracker:
                 "An MLflow run is already active; call mlflow.end_run()"
             )
 
-        requested = self._validate_stages(stages)
         mlflow.set_experiment(self.experiment_name)
         run_id = self._get_or_create_run(name, configuration)
 
@@ -177,7 +160,7 @@ class MlflowTracker:
             mlflow.set_tags(
                 {
                     **(tags or {}),
-                    "stages": self._stage_tag(run_id, requested),
+                    "stages": self._stage_tag(run_id, stages),
                 }
             )
             yield run_id
@@ -266,22 +249,22 @@ class MlflowTracker:
         ):
             yield
 
-    @classmethod
+    @staticmethod
     def pending_stages(
-        cls,
         *,
         completed: Collection[Stage],
-        requested: Iterable[Stage],
+        requested: set[Stage],
     ) -> tuple[Stage, ...]:
-        requested = cls._validate_stages(requested)
         available = set(completed)
         pending = []
-        for stage in requested:
+        for stage in Stage:
+            if stage not in requested:
+                continue
             missing = stage.prerequisites - available
             if missing:
                 raise ValueError(
                     f"Stage {stage!r} requires completed stages: "
-                    f"{', '.join(sorted(missing))}"
+                    f"{', '.join(missing)}"
                 )
             if stage not in available:
                 pending.append(stage)
@@ -294,7 +277,6 @@ class MlflowTracker:
         stage: Stage,
         metrics: Mapping[str, Any],
     ) -> None:
-        stage = self._validate_stages((stage,))[0]
         prefixed = {
             f"{stage}.{key}": value
             for key, value in _finite_metrics(metrics).items()
@@ -316,7 +298,6 @@ class MlflowTracker:
         run_id: str,
         stage: Stage,
     ) -> None:
-        stage = self._validate_stages((stage,))[0]
         with TemporaryDirectory() as directory:
             path = self.client.download_artifacts(
                 run_id,
@@ -458,7 +439,7 @@ class MlflowTracker:
         with self.pipeline_run(
             name,
             configuration,
-            stages=prefix,
+            stages=set(prefix),
             tags=fork_tags,
         ) as target_run_id:
             target_states = self.episode_run_states(target_run_id)

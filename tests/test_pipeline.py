@@ -162,7 +162,7 @@ class PipelineExecutionTests(unittest.TestCase):
         tracker.pipeline_run.assert_called_once_with(
             name,
             config.to_tracking_dict(),
-            stages=(Stage.TRANSCRIPTION,),
+            stages={Stage.TRANSCRIPTION},
             tags={"kind": "test"},
         )
         transcriber_type.assert_called_once_with(config.transcription)
