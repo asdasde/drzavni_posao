@@ -13,3 +13,9 @@ mlruns/
 **/*.ipynb
 !label_characters.ipynb
 !validate_alignment.ipynb
+
+# Generated search inputs and outputs
+/transcripts/
+/data/episodes.jsonl
+/data/segments.jsonl
+/artifacts/
