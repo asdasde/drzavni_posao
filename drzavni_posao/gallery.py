@@ -1,4 +1,6 @@
+import json
 import logging
+from pathlib import Path
 
 import numpy as np
 
@@ -6,6 +8,10 @@ from .embedder import Embedder
 from .store import MediaStore
 
 logger = logging.getLogger(__name__)
+
+
+def load_speaker_samples(path: Path) -> dict[str, list[dict]]:
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 class Gallery:
