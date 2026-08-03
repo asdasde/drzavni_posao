@@ -38,14 +38,11 @@ class CrossEncoderReranker:
         resolved_model_path = resolve_model_path(
             model_name, local_files_only=local_files_only
         )
-        offline_arguments = {"local_files_only": True}
         try:
             self.model = CrossEncoder(
                 resolved_model_path,
                 device=device,
-                automodel_args=offline_arguments,
-                tokenizer_args=offline_arguments,
-                config_args=offline_arguments,
+                local_files_only=True,
             )
         except TypeError as error:
             raise RuntimeError(

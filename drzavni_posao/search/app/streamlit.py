@@ -10,12 +10,24 @@ except ImportError as error:  # pragma: no cover - exercised only without UI ext
         "The web interface needs Streamlit. Install the 'search' optional dependencies."
     ) from error
 
-from drzavni_posao.search.retrieval.engine import SearchEngine
+from drzavni_posao.search.retrieval.engine import SearchEngine, SearchMethod
+from drzavni_posao.search.retrieval.rerank import (
+    DEFAULT_RERANKER_MODEL,
+    CrossEncoderReranker,
+)
 
 
 SEGMENTS_PATH = os.environ.get("DP_SEGMENTS_PATH", "data/segments.jsonl")
 BM25_PATH = os.environ.get("DP_BM25_PATH", "artifacts/bm25_index.json")
 VECTOR_PATH = os.environ.get("DP_VECTOR_PATH", "artifacts/vector_index")
+RERANKER_MODEL = os.environ.get("DP_RERANKER_MODEL", DEFAULT_RERANKER_MODEL)
+
+METHODS_BY_LABEL: dict[str, SearchMethod] = {
+    "BM25": "bm25",
+    "Dense": "dense",
+    "Hybrid": "hybrid",
+    "Hybrid + reranker": "hybrid_rerank",
+}
 
 
 def _vector_metadata_exists(path: str) -> bool:
@@ -25,17 +37,35 @@ def _vector_metadata_exists(path: str) -> bool:
     ).exists()
 
 
+def _available_methods(vector_available: bool) -> list[str]:
+    methods = ["BM25"]
+    if vector_available:
+        methods.extend(["Dense", "Hybrid", "Hybrid + reranker"])
+    return methods
+
+
 def _default_method_index(methods: list[str]) -> int:
-    return methods.index("BM25")
+    default = "Hybrid" if "Hybrid" in methods else "BM25"
+    return methods.index(default)
+
+
+def _method_for_label(label: str) -> SearchMethod:
+    return METHODS_BY_LABEL[label]
 
 
 @st.cache_resource(show_spinner="Loading search indexes…")
-def load_engine(use_vectors: bool) -> SearchEngine:
+def load_engine(use_vectors: bool, use_reranker: bool = False) -> SearchEngine:
+    reranker = (
+        CrossEncoderReranker(RERANKER_MODEL, local_files_only=True)
+        if use_reranker
+        else None
+    )
     return SearchEngine.from_paths(
         segments_path=SEGMENTS_PATH,
         bm25_path=BM25_PATH,
         vector_path=VECTOR_PATH if use_vectors else None,
         local_models_only=True,
+        reranker=reranker,
     )
 
 
@@ -52,9 +82,7 @@ def main() -> None:
     )
 
     vector_available = _vector_metadata_exists(VECTOR_PATH)
-    methods = ["BM25"]
-    if vector_available:
-        methods.extend(["Dense", "Hybrid"])
+    methods = _available_methods(vector_available)
 
     with st.sidebar:
         st.header("Podešavanja")
@@ -62,7 +90,10 @@ def main() -> None:
             "Metod pretrage",
             methods,
             index=_default_method_index(methods),
-            help="Hybrid kombinuje ključne reči, semantiku i imena likova.",
+            help=(
+                "Hybrid kombinuje ključne reči, semantiku i imena likova. "
+                "Reranker zatim preciznije poređa najbolje hibridne kandidate."
+            ),
         )
         top_k = st.slider("Broj epizoda", min_value=1, max_value=20, value=5)
         candidate_k = st.slider(
@@ -92,9 +123,12 @@ def main() -> None:
         st.warning("Unesite opis scene.")
         return
 
-    method = method_label.casefold()
+    method = _method_for_label(method_label)
     try:
-        engine = load_engine(use_vectors=method != "bm25")
+        engine = load_engine(
+            use_vectors=method != "bm25",
+            use_reranker=method == "hybrid_rerank",
+        )
         with st.spinner("Pretražujem transkripte…"):
             results = engine.search(
                 query,
