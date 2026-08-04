@@ -3,12 +3,13 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import math
 import sys
-from array import array
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol, Sequence
+
+import numpy as np
+from numpy.typing import ArrayLike, NDArray
 
 from ..common.fingerprints import (
     segment_corpus_fingerprint,
@@ -21,6 +22,7 @@ from ..text import normalize_text
 
 VECTOR_INDEX_VERSION = 2
 DEFAULT_MODEL = "intfloat/multilingual-e5-base"
+Float32Array = NDArray[np.float32]
 
 
 class TextEncoder(Protocol):
@@ -28,9 +30,9 @@ class TextEncoder(Protocol):
     dimension: int
     uses_e5_prefixes: bool
 
-    def encode_passages(self, texts: Sequence[str]) -> list[list[float]]: ...
+    def encode_passages(self, texts: Sequence[str]) -> Float32Array: ...
 
-    def encode_query(self, text: str) -> list[float]: ...
+    def encode_query(self, text: str) -> Float32Array: ...
 
 
 def resolve_model_path(model_name: str, *, local_files_only: bool) -> str:
@@ -63,14 +65,14 @@ def resolve_model_path(model_name: str, *, local_files_only: bool) -> str:
         ) from error
 
 
-def normalize_vector(vector: Sequence[float]) -> list[float]:
-    values = [float(value) for value in vector]
-    if not values or any(not math.isfinite(value) for value in values):
+def normalize_vector(vector: ArrayLike) -> Float32Array:
+    values = np.asarray(vector, dtype=np.float32)
+    if values.ndim != 1 or values.size == 0 or not np.isfinite(values).all():
         raise ValueError("Encoder produced an empty or non-finite vector")
-    length = math.sqrt(sum(value * value for value in values))
+    length = np.linalg.norm(values)
     if length == 0.0:
         raise ValueError("Encoder produced a zero vector")
-    return [value / length for value in values]
+    return values / length
 
 
 class SentenceTransformerTextEncoder:
@@ -118,28 +120,33 @@ class SentenceTransformerTextEncoder:
             dimension_method = self.model.get_sentence_embedding_dimension
         self.dimension = int(dimension_method())
 
-    def _encode(self, texts: Sequence[str], prefix: str) -> list[list[float]]:
+    def _encode(self, texts: Sequence[str], prefix: str) -> Float32Array:
         prepared = [
             f"{prefix}{text}" if self.uses_e5_prefixes else text for text in texts
         ]
-        values = self.model.encode(
-            prepared,
-            batch_size=self.batch_size,
-            convert_to_numpy=True,
-            normalize_embeddings=True,
-            show_progress_bar=len(prepared) > self.batch_size,
+        values = np.asarray(
+            self.model.encode(
+                prepared,
+                batch_size=self.batch_size,
+                convert_to_numpy=True,
+                normalize_embeddings=True,
+                show_progress_bar=len(prepared) > self.batch_size,
+            ),
+            dtype=np.float32,
         )
-        return [normalize_vector(row) for row in values]
+        if values.ndim != 2 or values.shape[0] != len(prepared):
+            raise ValueError("Encoder returned an invalid vector matrix")
+        return np.stack([normalize_vector(row) for row in values])
 
-    def encode_passages(self, texts: Sequence[str]) -> list[list[float]]:
+    def encode_passages(self, texts: Sequence[str]) -> Float32Array:
         return self._encode(texts, "passage: ")
 
-    def encode_query(self, text: str) -> list[float]:
+    def encode_query(self, text: str) -> Float32Array:
         return self._encode([text], "query: ")[0]
 
 
 class HashingTextEncoder:
-    """Deterministic dependency-free encoder for tests and offline smoke checks.
+    """Deterministic model-free encoder for tests and offline smoke checks.
 
     This is feature hashing, not a semantic model.  Artifacts built with it are
     labelled accordingly and must not be reported as dense semantic results.
@@ -152,8 +159,8 @@ class HashingTextEncoder:
         self.dimension = dimension
         self.uses_e5_prefixes = False
 
-    def _encode_one(self, text: str) -> list[float]:
-        vector = [0.0] * self.dimension
+    def _encode_one(self, text: str) -> Float32Array:
+        vector = np.zeros(self.dimension, dtype=np.float32)
         tokens = normalize_text(text).split()
         if not tokens:
             tokens = ["__empty__"]
@@ -165,10 +172,10 @@ class HashingTextEncoder:
             vector[index] += sign
         return normalize_vector(vector)
 
-    def encode_passages(self, texts: Sequence[str]) -> list[list[float]]:
-        return [self._encode_one(text) for text in texts]
+    def encode_passages(self, texts: Sequence[str]) -> Float32Array:
+        return np.stack([self._encode_one(text) for text in texts])
 
-    def encode_query(self, text: str) -> list[float]:
+    def encode_query(self, text: str) -> Float32Array:
         return self._encode_one(text)
 
 
@@ -183,17 +190,18 @@ class VectorIndex:
         self,
         *,
         segment_ids: list[str],
-        vectors: array,
+        vectors: Float32Array,
         dimension: int,
         model_name: str,
         uses_e5_prefixes: bool,
         corpus_fingerprint: str,
         semantic_fingerprint: str,
     ) -> None:
-        if dimension <= 0 or len(vectors) != len(segment_ids) * dimension:
+        values = np.asarray(vectors, dtype=np.float32)
+        if dimension <= 0 or values.shape != (len(segment_ids), dimension):
             raise ValueError("Vector matrix shape does not match segment IDs")
         self.segment_ids = segment_ids
-        self.vectors = vectors
+        self.vectors = values
         self.dimension = dimension
         self.model_name = model_name
         self.uses_e5_prefixes = uses_e5_prefixes
@@ -206,18 +214,18 @@ class VectorIndex:
     ) -> "VectorIndex":
         if not segments:
             raise ValueError("Cannot build a vector index over an empty corpus")
-        rows = encoder.encode_passages([segment.text_semantic for segment in segments])
-        if len(rows) != len(segments):
+        rows = np.asarray(
+            encoder.encode_passages([segment.text_semantic for segment in segments]),
+            dtype=np.float32,
+        )
+        if rows.ndim != 2 or rows.shape[0] != len(segments):
             raise ValueError("Encoder returned the wrong number of vectors")
-        flat = array("f")
-        for row in rows:
-            normalized = normalize_vector(row)
-            if len(normalized) != encoder.dimension:
-                raise ValueError("Encoder returned inconsistent dimensions")
-            flat.extend(normalized)
+        if rows.shape[1] != encoder.dimension:
+            raise ValueError("Encoder returned inconsistent dimensions")
+        vectors = np.stack([normalize_vector(row) for row in rows])
         return cls(
             segment_ids=[segment.segment_id for segment in segments],
-            vectors=flat,
+            vectors=vectors,
             dimension=encoder.dimension,
             model_name=encoder.name,
             uses_e5_prefixes=encoder.uses_e5_prefixes,
@@ -226,7 +234,7 @@ class VectorIndex:
         )
 
     def search_vector(
-        self, query_vector: Sequence[float], *, top_k: int = 50
+        self, query_vector: ArrayLike, *, top_k: int = 50
     ) -> list[DenseHit]:
         if top_k < 1:
             return []
@@ -235,41 +243,25 @@ class VectorIndex:
             raise ValueError(
                 f"Query vector has dimension {len(query)}, expected {self.dimension}"
             )
-        hits: list[DenseHit] = []
-        try:
-            import numpy as np
-        except ImportError:  # dependency-free hashing/unit-test path
-            for row_index, segment_id in enumerate(self.segment_ids):
-                start = row_index * self.dimension
-                score = sum(
-                    self.vectors[start + column] * query[column]
-                    for column in range(self.dimension)
-                )
-                hits.append(DenseHit(segment_id=segment_id, score=score))
-        else:
-            matrix = np.frombuffer(self.vectors, dtype=np.float32).reshape(
-                len(self.segment_ids), self.dimension
-            )
-            scores = matrix @ np.asarray(query, dtype=np.float32)
-            hits = [
-                DenseHit(segment_id=segment_id, score=float(score))
-                for segment_id, score in zip(self.segment_ids, scores)
-            ]
+        scores = self.vectors @ query
+        hits = [
+            DenseHit(segment_id=segment_id, score=float(score))
+            for segment_id, score in zip(self.segment_ids, scores)
+        ]
         hits.sort(key=lambda hit: (-hit.score, hit.segment_id))
         return hits[:top_k]
 
     @staticmethod
-    def artifact_paths(path: str | Path) -> tuple[Path, Path]:
-        base = Path(path)
-        if base.suffix == ".json":
-            metadata_path = base
-            vectors_path = base.with_suffix(".f32")
+    def artifact_paths(path: Path) -> tuple[Path, Path]:
+        if path.suffix == ".json":
+            metadata_path = path
+            vectors_path = path.with_suffix(".f32")
         else:
-            metadata_path = base.with_suffix(".json")
-            vectors_path = base.with_suffix(".f32")
+            metadata_path = path.with_suffix(".json")
+            vectors_path = path.with_suffix(".f32")
         return metadata_path, vectors_path
 
-    def save(self, path: str | Path) -> None:
+    def save(self, path: Path) -> None:
         metadata_path, vectors_path = self.artifact_paths(path)
         vectors_path.parent.mkdir(parents=True, exist_ok=True)
         temporary = vectors_path.with_name(f".{vectors_path.name}.tmp")
@@ -295,7 +287,7 @@ class VectorIndex:
 
     @classmethod
     def load(
-        cls, path: str | Path, *, segments: list[SegmentRecord] | None = None
+        cls, path: Path, *, segments: list[SegmentRecord] | None = None
     ) -> "VectorIndex":
         metadata_path, default_vectors_path = cls.artifact_paths(path)
         metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
@@ -306,18 +298,20 @@ class VectorIndex:
         vectors_path = metadata_path.parent / metadata.get(
             "vectors_file", default_vectors_path.name
         )
-        values = array("f")
+        row_count = int(metadata["row_count"])
+        dimension = int(metadata["dimension"])
+        expected_values = row_count * dimension
         with vectors_path.open("rb") as handle:
-            values.fromfile(
-                handle,
-                int(metadata["row_count"]) * int(metadata["dimension"]),
-            )
+            values = np.fromfile(handle, dtype=np.float32, count=expected_values)
+        if values.size != expected_values:
+            raise ValueError("Vector artifact is truncated")
         if metadata.get("byte_order", sys.byteorder) != sys.byteorder:
-            values.byteswap()
+            values.byteswap(inplace=True)
+        values = values.reshape(row_count, dimension)
         index = cls(
             segment_ids=[str(item) for item in metadata["segment_ids"]],
             vectors=values,
-            dimension=int(metadata["dimension"]),
+            dimension=dimension,
             model_name=str(metadata["model_name"]),
             uses_e5_prefixes=bool(metadata.get("uses_e5_prefixes", False)),
             corpus_fingerprint=str(metadata["corpus_fingerprint"]),
@@ -361,8 +355,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Build an exact cosine index for multilingual text embeddings"
     )
-    parser.add_argument("--segments", default="data/segments.jsonl")
-    parser.add_argument("--output", default="artifacts/vector_index")
+    parser.add_argument("--segments", type=Path, default=Path("data/segments.jsonl"))
+    parser.add_argument("--output", type=Path, default=Path("artifacts/vector_index"))
     parser.add_argument("--model", default=DEFAULT_MODEL)
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--batch-size", type=int, default=32)
@@ -374,7 +368,7 @@ def main() -> None:
     parser.add_argument(
         "--hashing-smoke",
         action="store_true",
-        help="Build a non-semantic dependency-free index for smoke testing only",
+        help="Build a non-semantic model-free index for smoke testing only",
     )
     parser.add_argument("--hashing-dimension", type=int, default=256)
     args = parser.parse_args()

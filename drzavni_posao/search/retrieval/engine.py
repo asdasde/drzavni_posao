@@ -80,9 +80,9 @@ class SearchEngine:
     def from_paths(
         cls,
         *,
-        segments_path: str | Path = "data/segments.jsonl",
-        bm25_path: str | Path = "artifacts/bm25_index.json",
-        vector_path: str | Path | None = None,
+        segments_path: Path = Path("data/segments.jsonl"),
+        bm25_path: Path = Path("artifacts/bm25_index.json"),
+        vector_path: Path | None = None,
         dense_device: str = "cpu",
         local_models_only: bool = True,
         reranker: Reranker | None = None,
@@ -365,9 +365,11 @@ def _print_results(results: list[SearchResult]) -> None:
 def build_argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Search Drzavni posao scenes")
     parser.add_argument("query")
-    parser.add_argument("--segments", default="data/segments.jsonl")
-    parser.add_argument("--bm25", default="artifacts/bm25_index.json")
-    parser.add_argument("--vectors", help="Vector artifact stem or metadata JSON")
+    parser.add_argument("--segments", type=Path, default=Path("data/segments.jsonl"))
+    parser.add_argument("--bm25", type=Path, default=Path("artifacts/bm25_index.json"))
+    parser.add_argument(
+        "--vectors", type=Path, help="Vector artifact stem or metadata JSON"
+    )
     parser.add_argument(
         "--method",
         choices=("bm25", "dense", "hybrid", "cross_encoder", "hybrid_rerank"),

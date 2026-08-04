@@ -65,15 +65,12 @@ def _load_transcript(path: Path) -> dict[str, Any]:
     return value
 
 
-def discover_transcripts(
-    directory: str | Path, *, recursive: bool = False
-) -> list[Path]:
-    root = Path(directory)
-    if not root.is_dir():
-        raise FileNotFoundError(f"Transcript directory does not exist: {root}")
-    paths = sorted(root.rglob("*.json") if recursive else root.glob("*.json"))
+def discover_transcripts(directory: Path, *, recursive: bool = False) -> list[Path]:
+    if not directory.is_dir():
+        raise FileNotFoundError(f"Transcript directory does not exist: {directory}")
+    paths = sorted(directory.rglob("*.json") if recursive else directory.glob("*.json"))
     if not paths:
-        raise FileNotFoundError(f"No transcript JSON files found under {root}")
+        raise FileNotFoundError(f"No transcript JSON files found under {directory}")
     return paths
 
 
@@ -214,7 +211,7 @@ def _run_id(path: Path) -> str:
     return path.parent.name or "root"
 
 
-def _load_episode_metadata(path: str | Path | None) -> dict[str, dict[str, Any]]:
+def _load_episode_metadata(path: Path | None) -> dict[str, dict[str, Any]]:
     if path is None:
         return {}
     metadata: dict[str, dict[str, Any]] = {}
@@ -364,11 +361,11 @@ def validate_records(
 
 
 def build_corpus(
-    transcript_dir: str | Path,
-    episodes_output: str | Path,
-    segments_output: str | Path,
+    transcript_dir: Path,
+    episodes_output: Path,
+    segments_output: Path,
     *,
-    metadata_path: str | Path | None = None,
+    metadata_path: Path | None = None,
     recursive: bool = False,
     source_time_offset_seconds: float = 0.0,
     max_utterances: int = 8,
@@ -398,11 +395,18 @@ def main() -> None:
         description="Convert WhisperX transcript JSON into searchable episode chunks."
     )
     parser.add_argument(
-        "--input", required=True, help="Directory containing transcript JSON"
+        "--input",
+        type=Path,
+        required=True,
+        help="Directory containing transcript JSON",
     )
-    parser.add_argument("--episodes-output", default="data/episodes.jsonl")
-    parser.add_argument("--segments-output", default="data/segments.jsonl")
-    parser.add_argument("--metadata", help="Optional episode metadata JSONL")
+    parser.add_argument(
+        "--episodes-output", type=Path, default=Path("data/episodes.jsonl")
+    )
+    parser.add_argument(
+        "--segments-output", type=Path, default=Path("data/segments.jsonl")
+    )
+    parser.add_argument("--metadata", type=Path, help="Optional episode metadata JSONL")
     parser.add_argument(
         "--recursive",
         action="store_true",

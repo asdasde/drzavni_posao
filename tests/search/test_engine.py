@@ -3,9 +3,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import numpy as np
+
 from drzavni_posao.search.common.models import SegmentRecord, format_timestamp
 from drzavni_posao.search.indexing.bm25 import BM25Index
-from drzavni_posao.search.indexing.vector import VectorIndex
+from drzavni_posao.search.indexing.vector import VectorIndex, normalize_vector
 from drzavni_posao.search.retrieval.engine import (
     SearchEngine,
     build_argument_parser,
@@ -20,17 +22,17 @@ class StubSemanticEncoder:
     uses_e5_prefixes = False
 
     @staticmethod
-    def _vector(text: str) -> list[float]:
+    def _vector(text: str) -> np.ndarray:
         lowered = text.casefold()
         if any(
             term in lowered
             for term in ("election scene", "democratic choice", "glasanje")
         ):
-            return [1.0, 0.0]
-        return [0.0, 1.0]
+            return np.array([1.0, 0.0], dtype=np.float32)
+        return np.array([0.0, 1.0], dtype=np.float32)
 
     def encode_passages(self, texts):
-        return [self._vector(text) for text in texts]
+        return np.stack([self._vector(text) for text in texts])
 
     def encode_query(self, text):
         return self._vector(text)
@@ -113,6 +115,18 @@ class RetrievalTests(unittest.TestCase):
             text_encoder=self.encoder,
         )
 
+    def test_vector_normalization_uses_float32_numpy_arrays(self) -> None:
+        normalized = normalize_vector([3.0, 4.0])
+        self.assertIsInstance(normalized, np.ndarray)
+        self.assertEqual(normalized.dtype, np.float32)
+        np.testing.assert_allclose(normalized, np.array([0.6, 0.8], dtype=np.float32))
+        self.assertIsInstance(self.vector.vectors, np.ndarray)
+
+    def test_vector_normalization_rejects_invalid_vectors(self) -> None:
+        for vector in ([], [0.0, 0.0], [1.0, float("nan")]):
+            with self.subTest(vector=vector), self.assertRaises(ValueError):
+                normalize_vector(vector)
+
     def test_score_normalization_handles_negative_and_constant_values(self) -> None:
         self.assertEqual(normalize_branch_scores({"a": -2, "b": 0}), {"a": 0, "b": 1})
         self.assertEqual(normalize_branch_scores({"a": 3, "b": 3}), {"a": 1, "b": 1})
@@ -133,6 +147,22 @@ class RetrievalTests(unittest.TestCase):
         args = build_argument_parser().parse_args(["Boškić"])
         self.assertEqual(args.method, "bm25")
         self.assertIsNone(args.vectors)
+
+    def test_cli_converts_path_strings_at_the_boundary(self) -> None:
+        args = build_argument_parser().parse_args(
+            [
+                "Boškić",
+                "--segments",
+                "custom/segments.jsonl",
+                "--bm25",
+                "custom/bm25.json",
+                "--vectors",
+                "custom/vectors",
+            ]
+        )
+        self.assertEqual(args.segments, Path("custom/segments.jsonl"))
+        self.assertEqual(args.bm25, Path("custom/bm25.json"))
+        self.assertEqual(args.vectors, Path("custom/vectors"))
 
     def test_dense_cross_wording_match(self) -> None:
         results = self.engine.search(
@@ -200,9 +230,7 @@ class RetrievalTests(unittest.TestCase):
                 replace(self.segments[0], text_semantic="different embedded passage"),
                 *self.segments[1:],
             ]
-            with self.assertRaisesRegex(
-                ValueError, "semantic segment corpus"
-            ):
+            with self.assertRaisesRegex(ValueError, "semantic segment corpus"):
                 VectorIndex.load(path, segments=changed)
 
     def test_youtube_timestamp_preserves_existing_query(self) -> None:

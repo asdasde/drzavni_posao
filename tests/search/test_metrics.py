@@ -34,6 +34,7 @@ class EvaluationTests(unittest.TestCase):
         args = build_argument_parser().parse_args([])
         self.assertEqual(args.methods, "bm25")
         self.assertIsNone(args.vectors)
+        self.assertEqual(args.queries, Path("data/evaluation_queries.jsonl"))
 
     def test_evaluation_provenance_binds_queries_and_files(self) -> None:
         query = EvaluationQuery(

@@ -141,18 +141,17 @@ class BM25Index:
             "corpus_fingerprint": self.corpus_fingerprint,
         }
 
-    def save(self, path: str | Path) -> None:
+    def save(self, path: Path) -> None:
         write_json(path, self.to_dict())
 
     @classmethod
     def load(
-        cls, path: str | Path, *, segments: list[SegmentRecord] | None = None
+        cls, path: Path, *, segments: list[SegmentRecord] | None = None
     ) -> "BM25Index":
-        source = Path(path)
-        value = json.loads(source.read_text(encoding="utf-8"))
+        value = json.loads(path.read_text(encoding="utf-8"))
         if value.get("version") != INDEX_VERSION:
             raise ValueError(
-                f"Unsupported BM25 artifact version in {source}: {value.get('version')}"
+                f"Unsupported BM25 artifact version in {path}: {value.get('version')}"
             )
         index = cls(
             segment_ids=[str(item) for item in value["segment_ids"]],
@@ -183,8 +182,10 @@ class BM25Index:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Build the local Okapi BM25 index")
-    parser.add_argument("--segments", default="data/segments.jsonl")
-    parser.add_argument("--output", default="artifacts/bm25_index.json")
+    parser.add_argument("--segments", type=Path, default=Path("data/segments.jsonl"))
+    parser.add_argument(
+        "--output", type=Path, default=Path("artifacts/bm25_index.json")
+    )
     parser.add_argument("--k1", type=float, default=1.5)
     parser.add_argument("--b", type=float, default=0.75)
     args = parser.parse_args()

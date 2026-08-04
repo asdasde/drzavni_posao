@@ -17,9 +17,9 @@ from drzavni_posao.search.retrieval.rerank import (
 )
 
 
-SEGMENTS_PATH = os.environ.get("DP_SEGMENTS_PATH", "data/segments.jsonl")
-BM25_PATH = os.environ.get("DP_BM25_PATH", "artifacts/bm25_index.json")
-VECTOR_PATH = os.environ.get("DP_VECTOR_PATH", "artifacts/vector_index")
+SEGMENTS_PATH = Path(os.environ.get("DP_SEGMENTS_PATH", "data/segments.jsonl"))
+BM25_PATH = Path(os.environ.get("DP_BM25_PATH", "artifacts/bm25_index.json"))
+VECTOR_PATH = Path(os.environ.get("DP_VECTOR_PATH", "artifacts/vector_index"))
 RERANKER_MODEL = os.environ.get("DP_RERANKER_MODEL", DEFAULT_RERANKER_MODEL)
 
 METHODS_BY_LABEL: dict[str, SearchMethod] = {
@@ -30,11 +30,8 @@ METHODS_BY_LABEL: dict[str, SearchMethod] = {
 }
 
 
-def _vector_metadata_exists(path: str) -> bool:
-    candidate = Path(path)
-    return (
-        candidate if candidate.suffix == ".json" else candidate.with_suffix(".json")
-    ).exists()
+def _vector_metadata_exists(path: Path) -> bool:
+    return (path if path.suffix == ".json" else path.with_suffix(".json")).exists()
 
 
 def _available_methods(vector_available: bool) -> list[str]:

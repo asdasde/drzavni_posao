@@ -96,7 +96,7 @@ def evaluation_query_fingerprint(queries: list[EvaluationQuery]) -> str:
 
 def build_evaluation_provenance(
     *,
-    query_files: list[str | Path],
+    query_files: list[Path],
     queries: list[EvaluationQuery],
     segments: list[SegmentRecord],
     semantic_fingerprint: str | None = None,
@@ -110,7 +110,7 @@ def build_evaluation_provenance(
         "query_file_fingerprints": [
             {
                 "path": str(path),
-                "sha256": hashlib.sha256(Path(path).read_bytes()).hexdigest(),
+                "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
             }
             for path in query_files
         ],
@@ -154,7 +154,7 @@ def _parse_judgment(value: dict[str, Any], default_reference: str) -> Judgment:
     )
 
 
-def load_evaluation_queries(path: str | Path) -> list[EvaluationQuery]:
+def load_evaluation_queries(path: Path) -> list[EvaluationQuery]:
     queries: list[EvaluationQuery] = []
     seen_ids: set[str] = set()
     for row_number, row in enumerate(read_jsonl(path), start=1):
@@ -196,7 +196,7 @@ def load_evaluation_queries(path: str | Path) -> list[EvaluationQuery]:
     return queries
 
 
-def load_evaluation_query_files(paths: list[str | Path]) -> list[EvaluationQuery]:
+def load_evaluation_query_files(paths: list[Path]) -> list[EvaluationQuery]:
     """Load multiple evaluation files while enforcing globally unique query IDs."""
     queries: list[EvaluationQuery] = []
     seen_ids: set[str] = set()
@@ -393,19 +393,22 @@ def build_argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Evaluate BM25, dense, hybrid, and reranked scene retrieval"
     )
-    parser.add_argument("--queries", default="data/evaluation_queries.jsonl")
+    parser.add_argument(
+        "--queries", type=Path, default=Path("data/evaluation_queries.jsonl")
+    )
     parser.add_argument(
         "--additional-queries",
         action="append",
+        type=Path,
         default=[],
         help="Additional JSONL query file; may be supplied more than once",
     )
-    parser.add_argument("--segments", default="data/segments.jsonl")
-    parser.add_argument("--bm25", default="artifacts/bm25_index.json")
-    parser.add_argument("--vectors", help="Vector artifact stem or metadata JSON")
+    parser.add_argument("--segments", type=Path, default=Path("data/segments.jsonl"))
+    parser.add_argument("--bm25", type=Path, default=Path("artifacts/bm25_index.json"))
     parser.add_argument(
-        "--methods", default="bm25", help="Comma-separated methods"
+        "--vectors", type=Path, help="Vector artifact stem or metadata JSON"
     )
+    parser.add_argument("--methods", default="bm25", help="Comma-separated methods")
     parser.add_argument("--candidate-k", type=int, default=50)
     parser.add_argument(
         "--ranking-unit", choices=("segment", "episode"), default="segment"
@@ -421,7 +424,9 @@ def build_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--allow-model-download", action="store_true")
     parser.add_argument("--reranker-model", default=DEFAULT_RERANKER_MODEL)
-    parser.add_argument("--output", default="artifacts/evaluation_results.json")
+    parser.add_argument(
+        "--output", type=Path, default=Path("artifacts/evaluation_results.json")
+    )
     return parser
 
 
