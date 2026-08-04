@@ -31,16 +31,12 @@ class PreprocessTests(unittest.TestCase):
         self.assertEqual(normalize_text(once), once)
         self.assertEqual(normalize_text("mikrodraganov"), "mikrodraganov")
 
-    def test_query_expansion_adds_a_small_english_to_serbian_dense_bridge(self) -> None:
+    def test_query_processing_does_not_inject_corpus_specific_terms(self) -> None:
         query = process_query("Boškić was arguing about elections")
-        self.assertIn("izbori", query.lexical_tokens)
-        self.assertIn("svadja", query.lexical_tokens)
-        self.assertIn("izbori glasanje stranka kandidat", query.semantic)
-        self.assertIn("svadja rasprava prepirka konflikt", query.semantic)
+        self.assertNotIn("izbori", query.lexical_tokens)
+        self.assertNotIn("svadja", query.lexical_tokens)
+        self.assertEqual(query.semantic, "Boškić was arguing about elections")
         self.assertEqual(query.characters, ("boskic",))
-
-        serbian_query = process_query("Boškić se svađa oko izbora")
-        self.assertEqual(serbian_query.semantic, "Boškić se svađa oko izbora")
 
 
 if __name__ == "__main__":

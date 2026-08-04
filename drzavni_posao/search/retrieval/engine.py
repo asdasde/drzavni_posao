@@ -191,7 +191,7 @@ class SearchEngine:
         if top_k < 1 or candidate_k < 1:
             raise ValueError("top_k and candidate_k must be positive")
         weights.validate()
-        query = process_query(query_text, expand=True)
+        query = process_query(query_text)
 
         raw_bm25: dict[str, float] = {}
         raw_dense: dict[str, float] = {}
