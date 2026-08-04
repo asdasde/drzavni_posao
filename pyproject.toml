@@ -8,8 +8,10 @@ dependencies = [
     "ipykernel>=7.3.0",
     "jupyter>=1.1.1",
     "mlflow-skinny>=3.14.0",
+    "pandas>=2.2.0",
     "pydantic>=2.13.4",
     "ruff>=0.15.20",
+    "scikit-learn>=1.5.0",
     "whisperx>=3.8.6",
 ]
 
