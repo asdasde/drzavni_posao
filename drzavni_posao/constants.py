@@ -3,8 +3,7 @@ ANONYMOUS_LABEL = "[anonymous]"
 
 # Serbian Cyrillic → Latin. Whisper flips script mid-transcript; the Transcriber
 # normalizes to Latin once. Digraphs (љ/њ/џ) map to multi-char values, which
-# str.translate handles. Note: all-caps words transliterate as "LjUBAV" not
-# "LJUBAV" — rare enough to ignore.
+# str.translate handles. Uppercase digraphs stay uppercase in all-caps words.
 CYRILLIC_TO_LATIN = str.maketrans(
     {
         "А": "A",
@@ -20,10 +19,10 @@ CYRILLIC_TO_LATIN = str.maketrans(
         "Ј": "J",
         "К": "K",
         "Л": "L",
-        "Љ": "Lj",
+        "Љ": "LJ",
         "М": "M",
         "Н": "N",
-        "Њ": "Nj",
+        "Њ": "NJ",
         "О": "O",
         "П": "P",
         "Р": "R",
@@ -35,7 +34,7 @@ CYRILLIC_TO_LATIN = str.maketrans(
         "Х": "H",
         "Ц": "C",
         "Ч": "Č",
-        "Џ": "Dž",
+        "Џ": "DŽ",
         "Ш": "Š",
         "а": "a",
         "б": "b",
