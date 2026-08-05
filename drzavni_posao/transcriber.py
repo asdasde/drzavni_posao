@@ -1,11 +1,13 @@
 import gc
 import logging
+from copy import deepcopy
 
+import numpy as np
 import torch
 import whisperx
 from pydantic import BaseModel, ConfigDict, Field
 
-from .constants import CYRILLIC_TO_LATIN
+from .constants import CYRILLIC_TO_LATIN, SR
 from .episode import Episode
 from .transcript import Transcript
 
@@ -27,6 +29,22 @@ class TranscriberConfig(BaseModel):
     vad_options: dict = Field(default_factory=dict)
     align_model_name: str | None = None
     batch_size: int = 16
+    retry_collapsed_min_duration: float = 8.0
+    retry_collapsed_max_chars_per_sec: float = 1.5
+    retry_chunk_size: int = 10
+
+
+def is_collapsed(
+    segment: dict,
+    *,
+    min_duration: float,
+    max_chars_per_sec: float,
+) -> bool:
+    duration = segment["end"] - segment["start"]
+    if duration < min_duration:
+        return False
+    text = segment.get("text", "").strip()
+    return (len(text) / duration) < max_chars_per_sec
 
 
 class Transcriber:
@@ -69,6 +87,7 @@ class Transcriber:
         result = self.asr.transcribe(audio, batch_size=self.config.batch_size)
         for segment in result["segments"]:
             segment["text"] = segment["text"].translate(CYRILLIC_TO_LATIN)
+        result["segments"] = self._retry_collapsed(audio, result["segments"])
         if self.align_model is not None:
             result = whisperx.align(
                 result["segments"],
@@ -88,6 +107,59 @@ class Transcriber:
             len(episode.transcript.segments),
         )
         return episode
+
+    def _retry_collapsed(self, audio: np.ndarray, segments: list[dict]) -> list[dict]:
+        """Re-decode long chunks that collapsed to almost no text.
+
+        Full-episode ASR keeps the default 30s merge. Only flagged spans are
+        cut out and transcribed again with ``retry_chunk_size``, then spliced
+        back before alignment.
+        """
+        config = self.config
+        repaired: list[dict] = []
+        retries = 0
+        for segment in segments:
+            if not is_collapsed(
+                segment,
+                min_duration=config.retry_collapsed_min_duration,
+                max_chars_per_sec=config.retry_collapsed_max_chars_per_sec,
+            ):
+                repaired.append(segment)
+                continue
+
+            start, end = segment["start"], segment["end"]
+            clip = audio[int(start * SR) : int(end * SR)]
+            retry = self.asr.transcribe(
+                clip,
+                batch_size=config.batch_size,
+                chunk_size=config.retry_chunk_size,
+            )
+            retry_segments = []
+            for item in retry["segments"]:
+                item = deepcopy(item)
+                item["text"] = item["text"].translate(CYRILLIC_TO_LATIN)
+                item["start"] += start
+                item["end"] += start
+                retry_segments.append(item)
+
+            if not retry_segments:
+                repaired.append(segment)
+                continue
+
+            repaired.extend(retry_segments)
+            retries += 1
+            logger.info(
+                "Retried collapsed %.2f–%.2f (%d chars / %.1fs) -> %d segments",
+                start,
+                end,
+                len(segment.get("text", "").strip()),
+                end - start,
+                len(retry_segments),
+            )
+
+        if retries:
+            logger.info("Retried %d collapsed chunk(s)", retries)
+        return repaired
 
     def free(self) -> None:
         """Release the models and clear the GPU cache."""

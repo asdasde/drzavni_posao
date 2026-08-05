@@ -29,6 +29,26 @@ databricks workspace import \
   --file label_characters.ipynb
 
 databricks workspace import \
+  /Users/luka.erceg@databricks.com/drzavni_posao/listen_labels \
+  --profile staging --format JUPYTER --language PYTHON --overwrite \
+  --file listen_labels.ipynb
+
+databricks workspace import \
+  /Users/luka.erceg@databricks.com/drzavni_posao/probe_asr_vs_align \
+  --profile staging --format JUPYTER --language PYTHON --overwrite \
+  --file probe_asr_vs_align.ipynb
+
+databricks workspace import \
+  /Users/luka.erceg@databricks.com/drzavni_posao/probe_collapsed_retry \
+  --profile staging --format JUPYTER --language PYTHON --overwrite \
+  --file probe_collapsed_retry.ipynb
+
+databricks workspace import \
+  /Users/luka.erceg@databricks.com/drzavni_posao/probe_collapse_thresholds \
+  --profile staging --format JUPYTER --language PYTHON --overwrite \
+  --file probe_collapse_thresholds.ipynb
+
+databricks workspace import \
   /Users/luka.erceg@databricks.com/drzavni_posao/large-v3-hotwords-assignment-nb \
   --profile staging --format JUPYTER --language PYTHON --overwrite \
   --file large-v3-hotwords-assignment-nb.ipynb

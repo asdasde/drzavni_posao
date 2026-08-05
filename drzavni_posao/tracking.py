@@ -86,22 +86,16 @@ class MlflowTracker:
             )
             return json.loads(Path(path).read_text(encoding="utf-8"))
 
-    def _get_or_create_run(
-        self,
-        name: str,
-        configuration: Mapping[str, Any],
-    ) -> str:
-        config_id = configuration_id(configuration)
+    def _get_or_create_run(self, name: str, config: Any) -> str:
+        configuration = config.to_dict()
+        config_id = configuration_id(config.to_dict(exclude_defaults=True))
         experiment = self.client.get_experiment_by_name(self.experiment_name)
         if experiment is None:
             raise ValueError(f"Unknown experiment {self.experiment_name}")
 
         runs = self.client.search_runs(
             [experiment.experiment_id],
-            (
-                "tags.run_level = 'configuration' "
-                f"AND tags.config_id = '{config_id}'"
-            ),
+            (f"tags.run_level = 'configuration' AND tags.config_id = '{config_id}'"),
             max_results=2,
             order_by=["attributes.start_time DESC"],
         )
@@ -125,35 +119,37 @@ class MlflowTracker:
             self.client.log_param(run.info.run_id, key, value)
         self.client.log_dict(
             run.info.run_id,
-            dict(configuration),
+            configuration,
             "config.json",
         )
         return run.info.run_id
 
     def _stage_tag(self, run_id: str, requested: set[Stage]) -> str:
         current = self.client.get_run(run_id).data.tags.get("stages", "")
-        included = {
-            Stage(stage) for stage in current.split(",") if stage
-        } | set(requested)
+        included = {Stage(stage) for stage in current.split(",") if stage} | set(
+            requested
+        )
         return ",".join(stage for stage in Stage if stage in included)
 
     @contextmanager
     def pipeline_run(
         self,
         name: str,
-        configuration: Mapping[str, Any],
+        config: Any,
         *,
         stages: set[Stage],
         tags: Mapping[str, Any] | None = None,
     ):
-        """Start or resume one exact configuration-level run."""
+        """Start or resume a configuration-level run for ``config``.
+
+        ``config`` is a ``PipelineConfig`` (or anything with ``to_dict``).
+        The full dump is logged; ``config_id`` uses ``exclude_defaults=True``.
+        """
         if mlflow.active_run() is not None:
-            raise RuntimeError(
-                "An MLflow run is already active; call mlflow.end_run()"
-            )
+            raise RuntimeError("An MLflow run is already active; call mlflow.end_run()")
 
         mlflow.set_experiment(self.experiment_name)
-        run_id = self._get_or_create_run(name, configuration)
+        run_id = self._get_or_create_run(name, config)
 
         logger.info("Using parent run: %s", run_id)
         with mlflow.start_run(run_id=run_id):
@@ -195,8 +191,7 @@ class MlflowTracker:
         if len(runs) > 1:
             run_ids = [run.info.run_id for run in runs]
             raise DuplicateEpisodeRunError(
-                f"Multiple child runs exist for episode {episode_key!r}: "
-                f"{run_ids}"
+                f"Multiple child runs exist for episode {episode_key!r}: {run_ids}"
             )
         return runs[0].info.run_id if runs else None
 
@@ -212,8 +207,7 @@ class MlflowTracker:
             if episode_key in states:
                 run_ids = [states[episode_key].run_id, run.info.run_id]
                 raise DuplicateEpisodeRunError(
-                    f"Multiple child runs exist for episode {episode_key!r}: "
-                    f"{run_ids}"
+                    f"Multiple child runs exist for episode {episode_key!r}: {run_ids}"
                 )
             completed = {
                 Stage(key.removeprefix("stage."))
@@ -263,8 +257,7 @@ class MlflowTracker:
             missing = stage.prerequisites - available
             if missing:
                 raise ValueError(
-                    f"Stage {stage!r} requires completed stages: "
-                    f"{', '.join(missing)}"
+                    f"Stage {stage!r} requires completed stages: {', '.join(missing)}"
                 )
             if stage not in available:
                 pending.append(stage)
@@ -278,8 +271,7 @@ class MlflowTracker:
         metrics: Mapping[str, Any],
     ) -> None:
         prefixed = {
-            f"{stage}.{key}": value
-            for key, value in _finite_metrics(metrics).items()
+            f"{stage}.{key}": value for key, value in _finite_metrics(metrics).items()
         }
         mlflow.log_metrics(prefixed)
         mlflow.log_dict(
@@ -315,16 +307,13 @@ class MlflowTracker:
             dict(self.client.get_run(state.run_id).data.metrics)
             for state in self.episode_run_states(parent_run_id).values()
         ]
-        metric_names = {
-            name for metrics in metric_sets for name in metrics
-        }
+        metric_names = {name for metrics in metric_sets for name in metrics}
         averages = {}
         for name in metric_names:
             values = [
                 metrics[name]
                 for metrics in metric_sets
-                if name in metrics
-                and math.isfinite(float(metrics[name]))
+                if name in metrics and math.isfinite(float(metrics[name]))
             ]
             if values:
                 averages[f"mean.{name}"] = fmean(values)
@@ -355,26 +344,23 @@ class MlflowTracker:
             for episode_key, state in self.episode_run_states(
                 parents[0].info.run_id
             ).items()
-            if metric
-            in (run := self.client.get_run(state.run_id)).data.metrics
+            if metric in (run := self.client.get_run(state.run_id)).data.metrics
         }
 
     def _validate_fork_configuration(
         self,
-        source_run_id: str,
-        configuration: Mapping[str, Any],
+        source: Any,
+        target: Any,
         copy_until: Stage,
     ) -> tuple[Stage, ...]:
         pipeline = tuple(Stage)
         prefix = pipeline[: pipeline.index(copy_until) + 1]
-        source = self._configuration(source_run_id)
+        source_dump = source.to_dict(exclude_defaults=True)
+        target_dump = target.to_dict(exclude_defaults=True)
         for key in copy_until.config_keys:
-            if without_empty_options(
-                source.get(key)
-            ) != without_empty_options(configuration.get(key)):
+            if source_dump.get(key) != target_dump.get(key):
                 raise ValueError(
-                    f"{key} configuration must match to copy "
-                    f"through {copy_until}"
+                    f"{key} configuration must match to copy through {copy_until}"
                 )
         return prefix
 
@@ -393,8 +379,7 @@ class MlflowTracker:
         missing = stage.required_artifacts - artifacts
         if missing:
             raise ValueError(
-                f"Completed {stage} stage is missing artifacts: "
-                f"{sorted(missing)}"
+                f"Completed {stage} stage is missing artifacts: {sorted(missing)}"
             )
 
         source = self.client.get_run(source_episode_run_id)
@@ -421,18 +406,17 @@ class MlflowTracker:
         self,
         source_run_id: str,
         name: str,
-        configuration: Mapping[str, Any],
+        config: Any,
         *,
         copy_until: Stage,
     ) -> str:
         source = self.client.get_run(source_run_id)
         if source.data.tags.get("run_level") != "configuration":
-            raise ValueError(
-                f"Run {source_run_id} is not a configuration run"
-            )
+            raise ValueError(f"Run {source_run_id} is not a configuration run")
+        source_config = type(config).from_dict(self._configuration(source_run_id))
         prefix = self._validate_fork_configuration(
-            source_run_id,
-            configuration,
+            source_config,
+            config,
             copy_until,
         )
         source_states = self.episode_run_states(source_run_id)
@@ -443,7 +427,7 @@ class MlflowTracker:
 
         with self.pipeline_run(
             name,
-            configuration,
+            config,
             stages=set(prefix),
             tags=fork_tags,
         ) as target_run_id:
@@ -485,30 +469,9 @@ def _flatten_params(value: Any, prefix: str = "") -> dict[str, Any]:
     return flattened
 
 
-def without_empty_options(value: Any) -> Any:
-    """Drop empty option containers so absent and empty compare as equal.
-
-    An option block that is present but empty asks for nothing, which is what
-    omitting it asks for too. Treating the two alike keeps a config that gains
-    a new options field identical to the runs recorded before it existed.
-    """
-    if isinstance(value, Mapping):
-        cleaned = {
-            key: without_empty_options(item) for key, item in value.items()
-        }
-        return {
-            key: item
-            for key, item in cleaned.items()
-            if item != {} and item != []
-        }
-    if isinstance(value, (list, tuple)):
-        return [without_empty_options(item) for item in value]
-    return value
-
-
 def configuration_id(configuration: Mapping[str, Any]) -> str:
     payload = json.dumps(
-        without_empty_options(configuration),
+        configuration,
         ensure_ascii=False,
         sort_keys=True,
         separators=(",", ":"),

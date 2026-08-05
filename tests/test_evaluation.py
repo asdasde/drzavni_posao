@@ -8,13 +8,22 @@ import mlflow
 import pandas as pd
 
 from drzavni_posao import evaluation
+from drzavni_posao.character_assigner import CharacterAssignerConfig
+from drzavni_posao.embedder import EmbedderConfig
+from drzavni_posao.pipeline import PipelineConfig
 from drzavni_posao.tracking import MlflowTracker, Stage
+from drzavni_posao.transcriber import TranscriberConfig
 
-CONFIGURATION = {
-    "audio": {"path": "/audio", "trim_start": 25, "trim_end": 7},
-    "transcription": {"model": "sr-cmb"},
-    "character_assigner": {"embedder": {"model": "wespeaker"}},
-}
+CONFIGURATION = PipelineConfig(
+    trim_start=25,
+    trim_end=7,
+    transcription=TranscriberConfig(model_name="sr-cmb"),
+    character_assigner=CharacterAssignerConfig(
+        min_similarity=0.1,
+        embedder=EmbedderConfig(embed_model="wespeaker"),
+        speaker_samples={"Djordje": [{"episode_key": "1", "start": 0.0, "end": 1.0}]},
+    ),
+)
 
 
 class StubTranscript:

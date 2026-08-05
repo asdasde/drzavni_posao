@@ -12,6 +12,7 @@ data/
 mlruns/
 **/*.ipynb
 !label_characters.ipynb
+!listen_labels.ipynb
 !validate_alignment.ipynb
 !pipeline.ipynb
 !large-v3-hotwords-assignment-nb.ipynb
