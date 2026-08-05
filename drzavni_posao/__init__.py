@@ -3,6 +3,7 @@ from .constants import SR
 from .diarizer import Diarizer, DiarizerConfig
 from .embedder import Embedder, EmbedderConfig
 from .episode import Episode
+from .evaluation import evaluate_run
 from .gallery import Gallery
 from .pipeline import PipelineConfig, run_pipeline
 from .store import MediaStore
@@ -28,4 +29,5 @@ __all__ = [
     "CharacterAssignerConfig",
     "MlflowTracker",
     "Stage",
+    "evaluate_run",
 ]

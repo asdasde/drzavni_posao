@@ -292,12 +292,7 @@ class MlflowTracker:
         )
         mlflow.set_tag(f"stage.{stage}", "complete")
 
-    def restore_stage(
-        self,
-        episode,
-        run_id: str,
-        stage: Stage,
-    ) -> None:
+    def stage_transcript(self, run_id: str, stage: Stage) -> Transcript:
         with TemporaryDirectory() as directory:
             path = self.client.download_artifacts(
                 run_id,
@@ -305,7 +300,15 @@ class MlflowTracker:
                 directory,
             )
             data = json.loads(Path(path).read_text(encoding="utf-8"))
-            episode.transcript = Transcript.from_dict(data)
+            return Transcript.from_dict(data)
+
+    def restore_stage(
+        self,
+        episode,
+        run_id: str,
+        stage: Stage,
+    ) -> None:
+        episode.transcript = self.stage_transcript(run_id, stage)
 
     def log_parent_averages(self, parent_run_id: str) -> None:
         metric_sets = [

@@ -13,6 +13,8 @@ mlruns/
 **/*.ipynb
 !label_characters.ipynb
 !validate_alignment.ipynb
+!pipeline.ipynb
+!large-v3-hotwords-assignment-nb.ipynb
 artifacts/
 data/
 transcripts/
