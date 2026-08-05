@@ -13,3 +13,6 @@ mlruns/
 **/*.ipynb
 !label_characters.ipynb
 !validate_alignment.ipynb
+artifacts/
+data/
+transcripts/
