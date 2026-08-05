@@ -369,7 +369,9 @@ class MlflowTracker:
         prefix = pipeline[: pipeline.index(copy_until) + 1]
         source = self._configuration(source_run_id)
         for key in copy_until.config_keys:
-            if source.get(key) != configuration.get(key):
+            if without_empty_options(
+                source.get(key)
+            ) != without_empty_options(configuration.get(key)):
                 raise ValueError(
                     f"{key} configuration must match to copy "
                     f"through {copy_until}"
@@ -483,14 +485,35 @@ def _flatten_params(value: Any, prefix: str = "") -> dict[str, Any]:
     return flattened
 
 
+def without_empty_options(value: Any) -> Any:
+    """Drop empty option containers so absent and empty compare as equal.
+
+    An option block that is present but empty asks for nothing, which is what
+    omitting it asks for too. Treating the two alike keeps a config that gains
+    a new options field identical to the runs recorded before it existed.
+    """
+    if isinstance(value, Mapping):
+        cleaned = {
+            key: without_empty_options(item) for key, item in value.items()
+        }
+        return {
+            key: item
+            for key, item in cleaned.items()
+            if item != {} and item != []
+        }
+    if isinstance(value, (list, tuple)):
+        return [without_empty_options(item) for item in value]
+    return value
+
+
 def configuration_id(configuration: Mapping[str, Any]) -> str:
-    canonical = json.dumps(
-        configuration,
+    payload = json.dumps(
+        without_empty_options(configuration),
         ensure_ascii=False,
         sort_keys=True,
         separators=(",", ":"),
     )
-    return hashlib.sha256(canonical.encode()).hexdigest()
+    return hashlib.sha256(payload.encode()).hexdigest()
 
 
 def _finite_metrics(metrics: Mapping[str, Any]) -> dict[str, float]:

@@ -18,3 +18,4 @@ mlruns/
 artifacts/
 data/
 transcripts/
+mlflow.db

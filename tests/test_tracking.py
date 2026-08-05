@@ -334,6 +334,38 @@ class MlflowTrackerTests(unittest.TestCase):
         ) as resumed:
             self.assertEqual(resumed, target_run_id)
 
+    def test_empty_options_match_a_configuration_recorded_without_them(self):
+        recorded = self.configuration()
+        with_empty_options = self.configuration()
+        with_empty_options["transcription"]["vad_options"] = {}
+
+        self.assertEqual(
+            tracking.configuration_id(recorded),
+            tracking.configuration_id(with_empty_options),
+        )
+
+        with self.tracker.pipeline_run(
+            "source",
+            recorded,
+            stages={Stage.TRANSCRIPTION},
+        ) as source_run_id:
+            with self.tracker.episode_run("1"):
+                self.tracker.log_stage(
+                    self.episode(),
+                    Stage.TRANSCRIPTION,
+                    {"word_count": 2},
+                )
+
+        derived = self.configuration(character_assigner_threshold=0.9)
+        derived["transcription"]["vad_options"] = {}
+        forked = self.tracker.fork_run(
+            source_run_id,
+            "forked",
+            derived,
+            copy_until=Stage.TRANSCRIPTION,
+        )
+        self.assertNotEqual(forked, source_run_id)
+
     def test_fork_run_rejects_changed_copied_configuration(self):
         source_configuration = self.configuration()
         with self.tracker.pipeline_run(

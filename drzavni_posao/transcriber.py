@@ -24,6 +24,7 @@ class TranscriberConfig(BaseModel):
     compute_type: str = "float16"
     language: str | None = None
     asr_options: dict = Field(default_factory=dict)
+    vad_options: dict = Field(default_factory=dict)
     align_model_name: str | None = None
     batch_size: int = 16
 
@@ -34,12 +35,17 @@ class Transcriber:
     def __init__(self, config: TranscriberConfig) -> None:
         self.config = config
         c = config
-        self.asr = whisperx.load_model(
-            c.model_name,
-            c.device,
+        load_kwargs = dict(
             compute_type=c.compute_type,
             language=c.language,
             asr_options=c.asr_options,
+        )
+        if c.vad_options:
+            load_kwargs["vad_options"] = c.vad_options
+        self.asr = whisperx.load_model(
+            c.model_name,
+            c.device,
+            **load_kwargs,
         )
         logger.info("Loaded WhisperX '%s' on %s", c.model_name, c.device)
         align_model_name = c.align_model_name
