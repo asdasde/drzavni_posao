@@ -81,6 +81,7 @@ class MediaStore:
                 episode.transcript.to_dict(),
                 fh,
                 ensure_ascii=False,
+                indent=2,
                 default=lambda o: o.item() if hasattr(o, "item") else str(o),
             )
         logger.info("Saved transcript for episode %r to %s", episode.key, out_dir)
