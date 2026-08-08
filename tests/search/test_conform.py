@@ -28,6 +28,12 @@ class SegmentationTests(unittest.TestCase):
         )
         self.assertEqual(parsed, ("DP-E0025", 25, "Boško šef", "2012-10-26"))
 
+    def test_filename_parser_preserves_extensionless_transcript_date(self) -> None:
+        parsed = parse_episode_filename(
+            "DRŽAVNI POSAO [HQ] - Ep.1： Rakija (24.09.2012.)"
+        )
+        self.assertEqual(parsed, ("DP-E0001", 1, "Rakija", "2012-09-24"))
+
     def test_windows_overlap_and_do_not_cross_huge_gap(self) -> None:
         segments = [raw_segment(i, i + 0.5, str(i)) for i in range(10)]
         segments.extend(
@@ -62,7 +68,7 @@ class SegmentationTests(unittest.TestCase):
             root = Path(temporary)
             transcript_dir = root / "named"
             transcript_dir.mkdir()
-            source_name = "DRŽAVNI POSAO [HQ] - Ep.1： Rakija (24.09.2012.).mp3"
+            source_name = "DRŽAVNI POSAO [HQ] - Ep.1： Rakija (24.09.2012.)"
             transcript = {
                 "file": source_name,
                 "text": "",
@@ -83,6 +89,8 @@ class SegmentationTests(unittest.TestCase):
             )
             self.assertEqual(len(episodes), 1)
             self.assertEqual(len(segments), 1)
+            self.assertEqual(episodes[0].episode_title, "Rakija")
+            self.assertEqual(episodes[0].broadcast_date, "2012-09-24")
             segment = segments[0]
             self.assertIn("ЉУБАВ", segment.text_original)
             self.assertIn("ljubav", segment.text_normalized)

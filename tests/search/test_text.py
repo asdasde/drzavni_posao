@@ -11,6 +11,13 @@ class PreprocessTests(unittest.TestCase):
             transliterate_serbian("ЉУБАВ ЊЕГОШ ЏЕЗ"),
             "LJUBAV NJEGOŠ DŽEZ",
         )
+        self.assertEqual(transliterate_serbian("КРАЉ"), "KRALJ")
+
+    def test_cyrillic_title_case_digraphs(self) -> None:
+        self.assertEqual(
+            transliterate_serbian("Љубав Његош Џез"),
+            "Ljubav Njegoš Džez",
+        )
 
     def test_nfc_and_nfd_normalize_identically(self) -> None:
         text = "Boškić i Čvarkov"

@@ -1,9 +1,13 @@
+import unicodedata
+
+
 SR: int = 16_000  # WhisperX audio sample rate
 ANONYMOUS_LABEL = "[anonymous]"
 
 # Serbian Cyrillic → Latin. Whisper flips script mid-transcript; the Transcriber
 # normalizes to Latin once. Digraphs (љ/њ/џ) map to multi-char values, which
-# str.translate handles. Uppercase digraphs stay uppercase in all-caps words.
+# str.translate handles. Context-free uppercase digraphs default to title case;
+# transliterate_serbian preserves their all-caps form when appropriate.
 CYRILLIC_TO_LATIN = str.maketrans(
     {
         "А": "A",
@@ -19,10 +23,10 @@ CYRILLIC_TO_LATIN = str.maketrans(
         "Ј": "J",
         "К": "K",
         "Л": "L",
-        "Љ": "LJ",
+        "Љ": "Lj",
         "М": "M",
         "Н": "N",
-        "Њ": "NJ",
+        "Њ": "Nj",
         "О": "O",
         "П": "P",
         "Р": "R",
@@ -34,7 +38,7 @@ CYRILLIC_TO_LATIN = str.maketrans(
         "Х": "H",
         "Ц": "C",
         "Ч": "Č",
-        "Џ": "DŽ",
+        "Џ": "Dž",
         "Ш": "Š",
         "а": "a",
         "б": "b",
@@ -68,3 +72,26 @@ CYRILLIC_TO_LATIN = str.maketrans(
         "ш": "š",
     }
 )
+
+_UPPERCASE_DIGRAPHS = {
+    "Љ": ("Lj", "LJ"),
+    "Њ": ("Nj", "NJ"),
+    "Џ": ("Dž", "DŽ"),
+}
+
+
+def transliterate_serbian(text: str) -> str:
+    """Transliterate Serbian Cyrillic while preserving digraph casing."""
+    normalized = unicodedata.normalize("NFC", text)
+    output: list[str] = []
+    for index, character in enumerate(normalized):
+        digraph = _UPPERCASE_DIGRAPHS.get(character)
+        if digraph is None:
+            output.append(character.translate(CYRILLIC_TO_LATIN))
+            continue
+        next_character = normalized[index + 1 : index + 2]
+        title_case, upper_case = digraph
+        output.append(
+            title_case if next_character and next_character.islower() else upper_case
+        )
+    return "".join(output)

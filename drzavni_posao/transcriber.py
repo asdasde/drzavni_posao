@@ -5,7 +5,7 @@ import torch
 import whisperx
 from pydantic import BaseModel, ConfigDict, Field
 
-from .constants import CYRILLIC_TO_LATIN
+from .constants import transliterate_serbian
 from .episode import Episode
 from .transcript import Transcript
 
@@ -62,7 +62,7 @@ class Transcriber:
         audio = episode.audio()
         result = self.asr.transcribe(audio, batch_size=self.config.batch_size)
         for segment in result["segments"]:
-            segment["text"] = segment["text"].translate(CYRILLIC_TO_LATIN)
+            segment["text"] = transliterate_serbian(segment["text"])
         if self.align_model is not None:
             result = whisperx.align(
                 result["segments"],
@@ -74,7 +74,7 @@ class Transcriber:
             )
         for segment in result["segments"]:
             for word in segment.get("words", []):
-                word["word"] = word["word"].translate(CYRILLIC_TO_LATIN)
+                word["word"] = transliterate_serbian(word["word"])
         episode.transcript = Transcript(result["segments"], file=episode.full_name)
         logger.info(
             "Transcribed episode %r: %d segments",

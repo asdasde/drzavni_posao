@@ -17,11 +17,26 @@ from ..text import CHARACTER_DISPLAY_NAMES, normalize_text, semantic_text
 EPISODE_PATTERN = re.compile(r"\bEp\.\s*(\d+)\b", re.IGNORECASE)
 DATE_PATTERN = re.compile(r"\((\d{2})\.(\d{2})\.(\d{4})\.\)")
 GENERIC_SPEAKER_PATTERN = re.compile(r"^SPEAKER_\d+$", re.IGNORECASE)
+SOURCE_FILE_SUFFIXES = {
+    ".flac",
+    ".json",
+    ".m4a",
+    ".mp3",
+    ".mp4",
+    ".ogg",
+    ".wav",
+}
 
 
 def parse_episode_filename(filename: str) -> tuple[str, int, str, str | None]:
     """Return episode id, number, title and ISO date parsed from an export name."""
-    name = unicodedata.normalize("NFC", Path(filename).stem)
+    source_name = unicodedata.normalize("NFC", Path(filename).name)
+    source_path = Path(source_name)
+    name = (
+        source_path.stem
+        if source_path.suffix.casefold() in SOURCE_FILE_SUFFIXES
+        else source_name
+    )
     episode_match = EPISODE_PATTERN.search(name)
     if episode_match is None:
         raise ValueError(f"Cannot parse episode number from filename: {filename!r}")

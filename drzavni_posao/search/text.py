@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 import re
-import unicodedata
 
-from ..constants import CYRILLIC_TO_LATIN
+from ..constants import transliterate_serbian
 
 DIACRITIC_FOLD = str.maketrans(
     {
@@ -52,11 +51,6 @@ CHARACTER_ALIASES: dict[str, tuple[str, ...]] = {
 
 _TOKEN_PATTERN = re.compile(r"[a-z0-9]+")
 _WHITESPACE_PATTERN = re.compile(r"\s+")
-
-
-def transliterate_serbian(text: str) -> str:
-    normalized = unicodedata.normalize("NFC", text)
-    return normalized.translate(CYRILLIC_TO_LATIN)
 
 
 def semantic_text(text: str) -> str:
