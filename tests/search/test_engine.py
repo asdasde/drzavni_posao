@@ -301,6 +301,22 @@ class RetrievalTests(unittest.TestCase):
                 "s1",
             )
 
+    def test_vector_load_accepts_legacy_version_two_artifact(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "vectors"
+            self.vector.save(path)
+            metadata_path = path.with_suffix(".json")
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            metadata["version"] = 2
+            metadata.pop("model_revision")
+            metadata.pop("model_requested_revision")
+            metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+
+            loaded = VectorIndex.load(path, segments=self.segments)
+
+            self.assertIsNone(loaded.model_revision)
+            self.assertIsNone(loaded.model_requested_revision)
+
     def test_vector_load_rejects_changed_semantic_corpus(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / "vectors"

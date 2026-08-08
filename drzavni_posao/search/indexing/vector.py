@@ -21,7 +21,8 @@ from ..text import normalize_text
 
 
 VECTOR_INDEX_VERSION = 1
-SUPPORTED_VECTOR_INDEX_VERSIONS = {VECTOR_INDEX_VERSION}
+# Version 2 predates the version reset and uses the same binary schema.
+SUPPORTED_VECTOR_INDEX_VERSIONS = {VECTOR_INDEX_VERSION, 2}
 DEFAULT_MODEL = "intfloat/multilingual-e5-base"
 Float32Array = NDArray[np.float32]
 
