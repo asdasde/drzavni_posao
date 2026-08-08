@@ -163,15 +163,23 @@ class MlflowTracker:
 
     def _child_runs(self, parent_run_id: str):
         parent = self.client.get_run(parent_run_id)
-        return self.client.search_runs(
-            experiment_ids=[parent.info.experiment_id],
-            filter_string=(
-                f"tags.mlflow.parentRunId = '{parent_run_id}' "
-                "AND tags.run_level = 'episode'"
-            ),
-            max_results=1000,
-            order_by=["attributes.start_time DESC"],
-        )
+        runs = []
+        page_token = None
+        while True:
+            page = self.client.search_runs(
+                experiment_ids=[parent.info.experiment_id],
+                filter_string=(
+                    f"tags.mlflow.parentRunId = '{parent_run_id}' "
+                    "AND tags.run_level = 'episode'"
+                ),
+                max_results=1000,
+                order_by=["attributes.start_time DESC"],
+                page_token=page_token,
+            )
+            runs.extend(page)
+            page_token = page.token
+            if not page_token:
+                return runs
 
     def _episode_run_id(
         self,

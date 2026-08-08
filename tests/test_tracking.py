@@ -3,6 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import mlflow
 
@@ -209,6 +210,34 @@ class MlflowTrackerTests(unittest.TestCase):
         self.assertEqual(
             states["1"].completed_stages,
             frozenset({Stage.DIARIZATION}),
+        )
+
+    def test_child_runs_follow_all_search_pages(self):
+        class Page(list):
+            def __init__(self, runs, token):
+                super().__init__(runs)
+                self.token = token
+
+        first = SimpleNamespace(info=SimpleNamespace(run_id="first"))
+        second = SimpleNamespace(info=SimpleNamespace(run_id="second"))
+        self.tracker.client = MagicMock()
+        self.tracker.client.get_run.return_value = SimpleNamespace(
+            info=SimpleNamespace(experiment_id="experiment")
+        )
+        self.tracker.client.search_runs.side_effect = [
+            Page([first], "next-page"),
+            Page([second], None),
+        ]
+
+        runs = self.tracker._child_runs("parent")
+
+        self.assertEqual(runs, [first, second])
+        self.assertEqual(
+            [
+                call.kwargs["page_token"]
+                for call in self.tracker.client.search_runs.call_args_list
+            ],
+            [None, "next-page"],
         )
 
     def test_episode_run_reuses_unique_child(self):
