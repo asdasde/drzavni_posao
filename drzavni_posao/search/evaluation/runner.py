@@ -4,22 +4,42 @@ import argparse
 import hashlib
 import json
 import math
+import platform
 import random
 import statistics
+import subprocess
 import time
 from dataclasses import asdict, dataclass
+from datetime import datetime, timezone
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any, Literal
 
 from ..common.fingerprints import segment_corpus_fingerprint
 from ..common.io import read_jsonl, write_json
 from ..common.models import SegmentRecord
-from ..retrieval.engine import SearchEngine, SearchMethod
+from ..indexing.vector import VectorIndex
+from ..retrieval.engine import (
+    OVERLAP_DEDUPLICATION_THRESHOLD,
+    RERANK_BASE_WEIGHT,
+    RERANK_MODEL_WEIGHT,
+    SearchEngine,
+    SearchMethod,
+)
+from ..retrieval.fusion import HybridWeights
 from ..retrieval.models import SearchResult
 from ..retrieval.rerank import CrossEncoderReranker, DEFAULT_RERANKER_MODEL
 
 
 TimeReference = Literal["transcript", "video"]
+EVALUATION_TOP_K = 10
+EVALUATION_RERANK_K = 50
+BOOTSTRAP_CONFIDENCE = 0.95
+BOOTSTRAP_SEEDS = {
+    "recall_at_5": 13,
+    "mrr_at_10": 17,
+    "ndcg_at_10": 19,
+}
 
 
 def parse_timestamp(value: str | int | float | None) -> float | None:
@@ -101,6 +121,9 @@ def build_evaluation_provenance(
     segments: list[SegmentRecord],
     semantic_fingerprint: str | None = None,
     vector_model_name: str | None = None,
+    vector_model_revision: str | None = None,
+    reranker_model_name: str | None = None,
+    reranker_model_revision: str | None = None,
 ) -> dict[str, Any]:
     provenance: dict[str, Any] = {
         "status": "current",
@@ -120,7 +143,176 @@ def build_evaluation_provenance(
         provenance["semantic_corpus_fingerprint"] = semantic_fingerprint
     if vector_model_name is not None:
         provenance["vector_model_name"] = vector_model_name
+    if vector_model_revision is not None:
+        provenance["vector_model_revision"] = vector_model_revision
+    if reranker_model_name is not None:
+        provenance["reranker_model_name"] = reranker_model_name
+    if reranker_model_revision is not None:
+        provenance["reranker_model_revision"] = reranker_model_revision
     return provenance
+
+
+def _file_manifest(path: Path) -> dict[str, Any]:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        while chunk := handle.read(1024 * 1024):
+            digest.update(chunk)
+    return {
+        "path": str(path),
+        "size_bytes": path.stat().st_size,
+        "sha256": digest.hexdigest(),
+    }
+
+
+def _vector_artifact_manifest(path: Path | None) -> dict[str, Any] | None:
+    if path is None:
+        return None
+    metadata_path, default_vectors_path = VectorIndex.artifact_paths(path)
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    vectors_path = metadata_path.parent / metadata.get(
+        "vectors_file", default_vectors_path.name
+    )
+    return {
+        "metadata": _file_manifest(metadata_path),
+        "vectors": _file_manifest(vectors_path),
+    }
+
+
+def _package_version() -> str | None:
+    try:
+        return version("drzavni-posao")
+    except PackageNotFoundError:
+        return None
+
+
+def _git_state() -> dict[str, Any]:
+    try:
+        commit = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=Path.cwd(),
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=2,
+        ).stdout.strip()
+        status = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=Path.cwd(),
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=2,
+        ).stdout
+    except (FileNotFoundError, subprocess.SubprocessError):
+        return {"commit": None, "dirty": None}
+    return {"commit": commit, "dirty": bool(status.strip())}
+
+
+def build_evaluation_manifest(
+    *,
+    engine: SearchEngine,
+    methods: list[str],
+    queries: list[EvaluationQuery],
+    query_files: list[Path],
+    segments_path: Path,
+    bm25_path: Path,
+    vector_path: Path | None,
+    split: str,
+    ranking_unit: Literal["segment", "episode"],
+    candidate_k: int,
+    tolerance_seconds: float,
+    bootstrap_samples: int,
+    warmup: bool,
+    weights: HybridWeights,
+    top_k: int = EVALUATION_TOP_K,
+    rerank_k: int = EVALUATION_RERANK_K,
+) -> dict[str, Any]:
+    """Describe all inputs and settings needed to audit an evaluation run."""
+    weights.validate()
+    vector_index = engine.vector_index
+    reranker = engine.reranker
+    return {
+        "schema_version": 1,
+        "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+        "software": {
+            "package": "drzavni-posao",
+            "package_version": _package_version(),
+            "python_version": platform.python_version(),
+            "platform": platform.platform(),
+            "git": _git_state(),
+        },
+        "evaluation": {
+            "methods": methods,
+            "split": split,
+            "ranking_unit": ranking_unit,
+            "top_k": top_k,
+            "candidate_k": candidate_k,
+            "rerank_k": rerank_k,
+            "group_by_episode": ranking_unit == "episode",
+            "deduplicate_overlaps": ranking_unit == "episode",
+            "overlap_deduplication_threshold": (OVERLAP_DEDUPLICATION_THRESHOLD),
+            "tolerance_seconds": tolerance_seconds,
+            "warmup": warmup,
+            "hybrid_weights": asdict(weights),
+            "rerank_blend_weights": {
+                "base": RERANK_BASE_WEIGHT,
+                "model": RERANK_MODEL_WEIGHT,
+            },
+            "metrics": {
+                "recall_cutoff": 5,
+                "reciprocal_rank_cutoff": 10,
+                "ndcg_cutoff": 10,
+            },
+            "bootstrap": {
+                "samples": bootstrap_samples,
+                "confidence": BOOTSTRAP_CONFIDENCE,
+                "seeds": BOOTSTRAP_SEEDS,
+            },
+        },
+        "data": {
+            "query_count": len(queries),
+            "query_set_fingerprint": evaluation_query_fingerprint(queries),
+            "corpus_fingerprint": segment_corpus_fingerprint(engine.segments),
+            "semantic_corpus_fingerprint": (
+                vector_index.semantic_corpus_fingerprint
+                if vector_index is not None
+                else None
+            ),
+        },
+        "models": {
+            "vector": (
+                {
+                    "name": vector_index.model_name,
+                    "revision": vector_index.model_revision,
+                    "requested_revision": getattr(
+                        vector_index, "model_requested_revision", None
+                    ),
+                    "dimension": vector_index.dimension,
+                    "uses_e5_prefixes": vector_index.uses_e5_prefixes,
+                }
+                if vector_index is not None
+                else None
+            ),
+            "reranker": (
+                {
+                    "name": reranker.name,
+                    "revision": getattr(reranker, "revision", None),
+                    "requested_revision": getattr(reranker, "requested_revision", None),
+                    "batch_size": getattr(reranker, "batch_size", None),
+                }
+                if reranker is not None
+                else None
+            ),
+            "device": engine.dense_device,
+            "local_models_only": engine.local_models_only,
+        },
+        "artifacts": {
+            "queries": [_file_manifest(path) for path in query_files],
+            "segments": _file_manifest(segments_path),
+            "bm25_index": _file_manifest(bm25_path),
+            "vector_index": _vector_artifact_manifest(vector_path),
+        },
+    }
 
 
 def _parse_judgment(value: dict[str, Any], default_reference: str) -> Judgment:
@@ -316,6 +508,9 @@ def evaluate_method(
     ranking_unit: Literal["segment", "episode"] = "segment",
     tolerance_seconds: float = 2.0,
     bootstrap_samples: int = 1000,
+    top_k: int = EVALUATION_TOP_K,
+    rerank_k: int = EVALUATION_RERANK_K,
+    weights: HybridWeights = HybridWeights(),
 ) -> EvaluationSummary:
     per_query: list[dict[str, Any]] = []
     metrics: list[QueryMetrics] = []
@@ -325,10 +520,12 @@ def evaluate_method(
         results = engine.search(
             item.query,
             method=method,
-            top_k=10,
+            top_k=top_k,
             candidate_k=candidate_k,
+            weights=weights,
             group_by_episode=ranking_unit == "episode",
             deduplicate_overlaps=ranking_unit == "episode",
+            rerank_k=rerank_k,
         )
         elapsed_ms = (time.perf_counter() - started) * 1000
         score = calculate_query_metrics(
@@ -363,13 +560,19 @@ def evaluate_method(
         p95_latency_ms=sorted(latencies)[p95_index],
         confidence_intervals_95={
             "recall_at_5": _bootstrap_interval(
-                recall_values, samples=bootstrap_samples, seed=13
+                recall_values,
+                samples=bootstrap_samples,
+                seed=BOOTSTRAP_SEEDS["recall_at_5"],
             ),
             "mrr_at_10": _bootstrap_interval(
-                reciprocal_values, samples=bootstrap_samples, seed=17
+                reciprocal_values,
+                samples=bootstrap_samples,
+                seed=BOOTSTRAP_SEEDS["mrr_at_10"],
             ),
             "ndcg_at_10": _bootstrap_interval(
-                ndcg_values, samples=bootstrap_samples, seed=19
+                ndcg_values,
+                samples=bootstrap_samples,
+                seed=BOOTSTRAP_SEEDS["ndcg_at_10"],
             ),
         },
         per_query=per_query,
@@ -425,6 +628,10 @@ def build_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument("--allow-model-download", action="store_true")
     parser.add_argument("--reranker-model", default=DEFAULT_RERANKER_MODEL)
     parser.add_argument(
+        "--reranker-revision",
+        help="Optional Hugging Face commit, tag, or branch to pin",
+    )
+    parser.add_argument(
         "--output", type=Path, default=Path("artifacts/evaluation_results.json")
     )
     return parser
@@ -448,11 +655,13 @@ def main() -> None:
         raise ValueError(f"No evaluation queries in split {args.split!r}")
 
     reranker = None
+    weights = HybridWeights()
     if {"cross_encoder", "hybrid_rerank"} & set(methods):
         reranker = CrossEncoderReranker(
             args.reranker_model,
             device=args.device,
             local_files_only=not args.allow_model_download,
+            model_revision=args.reranker_revision,
         )
     engine = SearchEngine.from_paths(
         segments_path=args.segments,
@@ -467,10 +676,12 @@ def main() -> None:
             engine.search(
                 queries[0].query,
                 method=method,  # type: ignore[arg-type]
-                top_k=10,
+                top_k=EVALUATION_TOP_K,
                 candidate_k=args.candidate_k,
+                weights=weights,
                 group_by_episode=args.ranking_unit == "episode",
                 deduplicate_overlaps=args.ranking_unit == "episode",
+                rerank_k=EVALUATION_RERANK_K,
             )
     summaries = [
         evaluate_method(
@@ -481,6 +692,9 @@ def main() -> None:
             ranking_unit=args.ranking_unit,
             tolerance_seconds=args.tolerance_seconds,
             bootstrap_samples=args.bootstrap_samples,
+            top_k=EVALUATION_TOP_K,
+            rerank_k=EVALUATION_RERANK_K,
+            weights=weights,
         )
         for method in methods
     ]
@@ -495,6 +709,22 @@ def main() -> None:
             "candidate_k": args.candidate_k,
             "tolerance_seconds": args.tolerance_seconds,
             "warmup": args.warmup,
+            "manifest": build_evaluation_manifest(
+                engine=engine,
+                methods=methods,
+                queries=queries,
+                query_files=query_files,
+                segments_path=args.segments,
+                bm25_path=args.bm25,
+                vector_path=args.vectors,
+                split=args.split,
+                ranking_unit=args.ranking_unit,
+                candidate_k=args.candidate_k,
+                tolerance_seconds=args.tolerance_seconds,
+                bootstrap_samples=args.bootstrap_samples,
+                warmup=args.warmup,
+                weights=weights,
+            ),
             "provenance": build_evaluation_provenance(
                 query_files=query_files,
                 queries=queries,
@@ -507,6 +737,19 @@ def main() -> None:
                 vector_model_name=(
                     engine.vector_index.model_name
                     if engine.vector_index is not None
+                    else None
+                ),
+                vector_model_revision=(
+                    engine.vector_index.model_revision
+                    if engine.vector_index is not None
+                    else None
+                ),
+                reranker_model_name=(
+                    engine.reranker.name if engine.reranker is not None else None
+                ),
+                reranker_model_revision=(
+                    getattr(engine.reranker, "revision", None)
+                    if engine.reranker is not None
                     else None
                 ),
             ),

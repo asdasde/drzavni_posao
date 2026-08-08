@@ -163,12 +163,14 @@ Vector and reranker models are **local-only by default**. The commands do not
 download models unless `--allow-download` (or `--allow-model-download` for a
 search or evaluation reranker) is passed. `--hashing-smoke` builds a
 dependency-free, non-semantic test index only; it must not be presented as
-semantic retrieval.
+semantic retrieval. Use `--model-revision` and `--reranker-revision` to pin a
+Hugging Face commit, tag, or branch.
 
 Artifact manifests record lexical and semantic corpus fingerprints, segment
-order, model name, embedding dimension, E5 prefix behavior, and format version.
-Loading rejects stale or differently ordered indexes after either normalized
-BM25 text or embedded semantic text changes.
+order, model name and resolved snapshot revision, embedding dimension, E5
+prefix behavior, and format version. Loading rejects stale or differently
+ordered indexes after either normalized BM25 text or embedded semantic text
+changes.
 
 ## Scene search
 
@@ -213,7 +215,8 @@ After those generated files exist, the application reads
 `DP_SEGMENTS_PATH`, `DP_BM25_PATH`, and `DP_VECTOR_PATH`. Its initial selection
 is BM25 even when vector metadata is present. It loads a semantic model only
 after dense or hybrid search is selected, always local-only, and presents a
-user-facing error rather than downloading one.
+user-facing error rather than downloading one. `DP_RERANKER_MODEL` and
+`DP_RERANKER_REVISION` select an exact locally cached reranker snapshot.
 
 Optional episode metadata can add a `youtube_url` and source offset while
 segmenting:
@@ -246,10 +249,13 @@ once. Use the `dev` split for tuning aliases, chunking, and fusion weights, and
 report only the untouched `test` result. Read metric values from the written
 evaluation artifact, not from example numbers or historical reports.
 
-BM25 is also the `dp-evaluate` default. Evaluation outputs include query-file,
-parsed-query-set, and corpus fingerprints, but remain generated artifacts under
-`artifacts/`; do not commit them. Publish benchmark results to MLflow, object
-storage, or another artifact store when they need to be shared.
+BM25 is also the `dp-evaluate` default. Evaluation outputs include a complete
+run manifest: query, corpus, index, and vector-file hashes; vector and reranker
+model revisions; fusion and reranking weights; ranking, metric, and bootstrap
+settings; runtime/package versions; and Git commit/dirty state. Outputs remain
+generated artifacts under `artifacts/`; do not commit them. Publish benchmark
+results to MLflow, object storage, or another artifact store when they need to
+be shared.
 
 ## Data contracts
 
