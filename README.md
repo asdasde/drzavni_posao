@@ -42,6 +42,12 @@ downloads and immediately uploads any missing episodes.
 Use comma-separated `--season` or `--episode` values to select specific media,
 and `--dry-run` to preview the work.
 
+Download without accessing Databricks:
+
+```sh
+uv run episodes.py --local --episode 1,10,11,12
+```
+
 ## Databricks
 
 See [`docs/databricks-sync.md`](docs/databricks-sync.md) for package, notebook,

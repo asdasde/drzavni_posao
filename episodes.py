@@ -3,7 +3,7 @@
 # dependencies = ["yt-dlp[default]"]
 # ///
 
-"""Download Državni posao episodes and upload them to Databricks."""
+"""Download Državni posao episodes, optionally uploading them to Databricks."""
 
 from __future__ import annotations
 
@@ -216,6 +216,8 @@ def upload_existing(
         local_names.add(name)
         if local_video_id := video_id(local):
             local_names.add(local_video_id)
+        if args.local:
+            continue
         if name in existing_names and not args.overwrite:
             continue
         if args.dry_run:
@@ -249,7 +251,8 @@ def download_and_upload(
 
     video_url = f"https://www.youtube.com/watch?v={entry['id']}"
     if args.dry_run:
-        print(f"would download and upload: {title}")
+        action = "download" if args.local else "download and upload"
+        print(f"would {action}: {title}")
         return True
 
     options = {
@@ -272,6 +275,9 @@ def download_and_upload(
     if not local.is_file():
         raise FileNotFoundError(f"Downloaded MP3 not found: {local}")
 
+    if args.local:
+        return True
+
     print(f"uploading: {local.name}", flush=True)
     upload_file(local, args.volume, args.profile, overwrite=args.overwrite)
     existing_names.add(canonical_name(volume_name(local)))
@@ -283,7 +289,8 @@ def download_and_upload(
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(
         description=(
-            "Download Državni posao episodes and upload each MP3 to Databricks."
+            "Download Državni posao episodes and optionally upload each MP3 "
+            "to Databricks."
         )
     )
     result.add_argument(
@@ -301,6 +308,11 @@ def parser() -> argparse.ArgumentParser:
         type=Path,
         default=DEFAULT_DOWNLOADS,
         help=f"Local download root (default: {DEFAULT_DOWNLOADS})",
+    )
+    result.add_argument(
+        "--local",
+        action="store_true",
+        help="Download locally without invoking Databricks",
     )
     result.add_argument(
         "--volume",
@@ -339,7 +351,9 @@ def main() -> None:
         if args.season
         else None if episode_numbers else {DEFAULT_SEASON}
     )
-    existing_names = remote_names(args.volume, args.profile)
+    existing_names = (
+        set() if args.local else remote_names(args.volume, args.profile)
+    )
     playlists = discover_playlists(seasons)
     if not playlists:
         raise SystemExit(f"No playlists found for seasons: {sorted(seasons or [])}")

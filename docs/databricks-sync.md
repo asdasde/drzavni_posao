@@ -15,6 +15,7 @@ uv run episodes.py
 The command processes season 3 by default. Use comma-separated `--season` or
 `--episode` values to select specific media. `--downloads`, `--volume`,
 `--profile`, and `--overwrite` customize the local and remote locations.
+Add `--local` to download without accessing Databricks.
 
 ## Sync the Python package
 
