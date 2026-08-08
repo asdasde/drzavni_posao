@@ -17,7 +17,7 @@ class Episode:
 
     prefix = "DRŽAVNI POSAO [HQ] - "
     date_regex = re.compile(r"\((\d{2})\.(\d{2})\.(\d{4})\.\)")
-    episode_regex = re.compile(r"Ep\.(\d+)")
+    episode_regex = re.compile(r"Ep\.\s*(\d+)")
 
     def __init__(
         self,

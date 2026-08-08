@@ -1,6 +1,6 @@
 # /// script
 # requires-python = ">=3.12"
-# dependencies = ["yt-dlp"]
+# dependencies = ["yt-dlp[default]"]
 # ///
 
 """Download Državni posao episodes and upload them to Databricks."""
@@ -17,6 +17,7 @@ import unicodedata
 from pathlib import Path
 
 from yt_dlp import YoutubeDL
+from yt_dlp.utils import DownloadError
 
 CHANNEL_PLAYLISTS_URL = "https://www.youtube.com/@DrzavniPosaoSerija/playlists"
 PLAYLIST_RE = re.compile(
@@ -27,6 +28,11 @@ DATE_RE = re.compile(r"\(\d{2}\.\d{2}\.\d{4}\.\)")
 PREFIX_RE = re.compile(r"^DRŽAVNI POSAO(?: \[HQ\])?\s*-\s*", re.IGNORECASE)
 YOUTUBE_ID_SUFFIX_RE = re.compile(r" \[[^\]]+\]$")
 YOUTUBE_ID_RE = re.compile(r" \[([^\]]+)\]$")
+EXCLUDED_TITLES = {
+    "DRŽAVNI POSAO [HQ] - Masoni specijal (02.01.2014.)",
+    "DRŽAVNI POSAO [HQ] - Najbolji momenti (30.12.2013.)",
+    "DRŽAVNI POSAO [HQ] - Specijal (01.01.2014.)",
+}
 
 DEFAULT_SEASON = 3
 DEFAULT_DOWNLOADS = Path("downloads")
@@ -52,7 +58,8 @@ def video_id(path: Path) -> str | None:
 def is_episode(entry: dict) -> bool:
     title = entry.get("title") or ""
     return bool(
-        DATE_RE.search(title)
+        title not in EXCLUDED_TITLES
+        and DATE_RE.search(title)
         and (EPISODE_RE.search(title) or PREFIX_RE.match(title))
     )
 
@@ -225,6 +232,7 @@ def download_and_upload(
 
     options = {
         "format": "bestaudio/best",
+        "js_runtimes": {"node": {}},
         "outtmpl": str(directory / "%(title)s [%(id)s].%(ext)s"),
         "postprocessors": [
             {
@@ -306,6 +314,7 @@ def main() -> None:
         raise SystemExit(f"No playlists found for seasons: {sorted(seasons)}")
 
     actions = 0
+    failures = []
     for playlist in playlists:
         directory = args.downloads / f"season-{playlist['season']}"
         if not args.dry_run:
@@ -313,19 +322,27 @@ def main() -> None:
         local_names, uploads = upload_existing(directory, existing_names, args)
         actions += uploads
         for entry in playlist_entries(playlist["url"]):
-            actions += download_and_upload(
-                entry,
-                directory,
-                existing_names,
-                local_names,
-                args,
-            )
+            try:
+                actions += download_and_upload(
+                    entry,
+                    directory,
+                    existing_names,
+                    local_names,
+                    args,
+                )
+            except DownloadError:
+                failures.append(entry.get("title") or entry["id"])
     if actions == 0:
         print("Nothing to do.")
     elif args.dry_run:
         print(f"{actions} file(s) pending.")
     else:
         print(f"Processed {actions} file(s).")
+    if failures:
+        print(f"Failed to download {len(failures)} file(s):", file=sys.stderr)
+        for title in failures:
+            print(f"- {title}", file=sys.stderr)
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":
