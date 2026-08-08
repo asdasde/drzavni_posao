@@ -26,7 +26,7 @@ class CrossEncoderReranker:
         *,
         device: str = "cpu",
         local_files_only: bool = True,
-        batch_size: int = 16,
+        batch_size: int = 50,
         model_revision: str | None = None,
     ) -> None:
         try:
