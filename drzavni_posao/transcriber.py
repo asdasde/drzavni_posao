@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from .constants import CYRILLIC_TO_LATIN, SR
 from .episode import Episode
 from .transcript import Transcript
+from .vad_realigner import VadRealigner, capture_vad_segments
 
 logger = logging.getLogger(__name__)
 
@@ -29,9 +30,13 @@ class TranscriberConfig(BaseModel):
     vad_options: dict = Field(default_factory=dict)
     align_model_name: str | None = None
     batch_size: int = 16
+    chunk_size: int = 30
+    retry_collapsed: bool = True
     retry_collapsed_min_duration: float = 8.0
     retry_collapsed_max_chars_per_sec: float = 1.5
     retry_chunk_size: int = 10
+    vad_repair_min_silence: float | None = Field(default=None, gt=0)
+    vad_repair_padding: float = Field(default=0.1, ge=0)
 
 
 def is_collapsed(
@@ -84,7 +89,15 @@ class Transcriber:
         """Transcribe + align *episode*'s audio; set episode.transcript and return it."""
         logger.info("Transcribing episode %r", episode.key)
         audio = episode.audio()
-        result = self.asr.transcribe(audio, batch_size=self.config.batch_size)
+        with capture_vad_segments(
+            self.asr.vad_model,
+            enabled=self.config.vad_repair_min_silence is not None,
+        ) as vad_segments:
+            result = self.asr.transcribe(
+                audio,
+                batch_size=self.config.batch_size,
+                chunk_size=self.config.chunk_size,
+            )
         for segment in result["segments"]:
             segment["text"] = segment["text"].translate(CYRILLIC_TO_LATIN)
         result["segments"] = self._retry_collapsed(audio, result["segments"])
@@ -97,6 +110,26 @@ class Transcriber:
                 self.config.device,
                 return_char_alignments=False,
             )
+            if self.config.vad_repair_min_silence is not None:
+                realigner = VadRealigner.from_segments(
+                    vad_segments,
+                    min_silence=self.config.vad_repair_min_silence,
+                    padding=self.config.vad_repair_padding,
+                )
+                untouched, realignment_inputs = realigner.prepare(result["segments"])
+                if realignment_inputs:
+                    realigned = whisperx.align(
+                        realignment_inputs,
+                        self.align_model,
+                        self.align_meta,
+                        audio,
+                        self.config.device,
+                        return_char_alignments=False,
+                    )
+                    result["segments"] = sorted(
+                        [*untouched, *realigned["segments"]],
+                        key=lambda segment: segment["start"],
+                    )
         for segment in result["segments"]:
             for word in segment.get("words", []):
                 word["word"] = word["word"].translate(CYRILLIC_TO_LATIN)
@@ -116,6 +149,9 @@ class Transcriber:
         back before alignment.
         """
         config = self.config
+        if not config.retry_collapsed:
+            return segments
+
         repaired: list[dict] = []
         retries = 0
         for segment in segments:

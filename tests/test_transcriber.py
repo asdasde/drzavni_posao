@@ -1,10 +1,14 @@
 import unittest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 
 from drzavni_posao.constants import SR
-from drzavni_posao.transcriber import Transcriber, TranscriberConfig, is_collapsed
+from drzavni_posao.transcriber import (
+    Transcriber,
+    TranscriberConfig,
+    is_collapsed,
+)
 
 
 DEFAULTS = dict(
@@ -52,9 +56,13 @@ class TranscriberConfigTrackingTests(unittest.TestCase):
     def test_custom_retry_knobs_kept_when_excluding_defaults(self):
         data = TranscriberConfig(
             model_name="large-v3",
+            chunk_size=20,
+            retry_collapsed=False,
             retry_chunk_size=5,
             retry_collapsed_min_duration=6.0,
         ).model_dump(exclude_defaults=True)
+        self.assertEqual(data["chunk_size"], 20)
+        self.assertFalse(data["retry_collapsed"])
         self.assertEqual(data["retry_chunk_size"], 5)
         self.assertEqual(data["retry_collapsed_min_duration"], 6.0)
         self.assertNotIn("retry_collapsed_max_chars_per_sec", data)
@@ -66,6 +74,110 @@ class TranscriberConfigTrackingTests(unittest.TestCase):
                 exclude_defaults=True
             ),
         )
+
+    def test_vad_alignment_repair_is_enabled_by_min_silence(self):
+        default = TranscriberConfig(model_name="large-v3")
+        enabled = TranscriberConfig(
+            model_name="large-v3",
+            vad_repair_min_silence=1.0,
+        )
+
+        self.assertIsNone(default.vad_repair_min_silence)
+        self.assertFalse(hasattr(default, "repair_alignment_with_vad"))
+        self.assertEqual(
+            enabled.model_dump(exclude_defaults=True)["vad_repair_min_silence"],
+            1.0,
+        )
+
+
+class VadRealignmentTests(unittest.TestCase):
+    def test_transcriber_runs_second_alignment_on_vad_split_segments(self):
+        class FakeVad:
+            def merge_chunks(self, segments, chunk_size, onset, offset):
+                return [
+                    {
+                        "start": 10.0,
+                        "end": 20.0,
+                        "segments": [(10.0, 13.0), (17.0, 20.0)],
+                    }
+                ]
+
+        transcriber = Transcriber.__new__(Transcriber)
+        transcriber.config = TranscriberConfig(
+            model_name="large-v3",
+            vad_repair_min_silence=1.0,
+        )
+        transcriber.asr = MagicMock()
+        transcriber.asr.vad_model = FakeVad()
+        transcriber.asr.transcribe.side_effect = lambda *args, **kwargs: (
+            transcriber.asr.vad_model.merge_chunks([], 30, onset=0.5, offset=0.5),
+            {
+                "language": "sr",
+                "segments": [
+                    {
+                        "start": 10.0,
+                        "end": 20.0,
+                        "text": "ne može tako. Đe ste ljudi",
+                    }
+                ],
+            },
+        )[1]
+        transcriber.align_model = object()
+        transcriber.align_meta = {}
+        episode = MagicMock()
+        episode.key = "72"
+        episode.full_name = "72.mp3"
+        episode.audio.return_value = np.zeros(30 * SR, dtype=np.float32)
+
+        first_alignment = {
+            "segments": [
+                {
+                    "start": 10.2,
+                    "end": 20.0,
+                    "text": "ne može tako. Đe ste ljudi",
+                    "words": [
+                        {"word": "ne", "start": 10.2, "end": 10.5},
+                        {"word": "može", "start": 10.6, "end": 11.0},
+                        {"word": "tako.", "start": 12.0, "end": 16.0},
+                        {"word": "Đe", "start": 14.0, "end": 18.0},
+                        {"word": "ste", "start": 18.1, "end": 18.5},
+                        {"word": "ljudi", "start": 19.0, "end": 20.0},
+                    ],
+                }
+            ]
+        }
+        second_alignment = {
+            "segments": [
+                {
+                    "start": 10.2,
+                    "end": 12.8,
+                    "text": "ne može tako.",
+                    "words": [],
+                },
+                {
+                    "start": 17.2,
+                    "end": 20.0,
+                    "text": "Đe ste ljudi",
+                    "words": [],
+                },
+            ]
+        }
+
+        with patch(
+            "drzavni_posao.transcriber.whisperx.align",
+            side_effect=[first_alignment, second_alignment],
+        ) as align:
+            transcriber.run(episode)
+
+        self.assertEqual(align.call_count, 2)
+        self.assertEqual(
+            align.call_args_list[1].args[0],
+            [
+                {"start": 10.1, "end": 13.1, "text": "ne može tako."},
+                {"start": 16.9, "end": 20.1, "text": "Đe ste ljudi"},
+            ],
+        )
+        self.assertEqual(episode.transcript.segments, second_alignment["segments"])
 
 
 class RetryCollapsedTests(unittest.TestCase):
@@ -126,6 +238,19 @@ class RetryCollapsedTests(unittest.TestCase):
         repaired = self.transcriber._retry_collapsed(audio, segments)
 
         self.assertEqual(repaired, segments)
+
+    def test_skips_retry_when_disabled(self):
+        self.transcriber.config = TranscriberConfig(
+            model_name="large-v3",
+            retry_collapsed=False,
+        )
+        audio = np.zeros(30 * SR, dtype=np.float32)
+        segments = [{"start": 0.0, "end": 20.0, "text": "..."}]
+
+        repaired = self.transcriber._retry_collapsed(audio, segments)
+
+        self.assertEqual(repaired, segments)
+        self.transcriber.asr.transcribe.assert_not_called()
 
 
 if __name__ == "__main__":
