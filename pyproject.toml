@@ -1,7 +1,7 @@
 [project]
 name = "drzavni-posao"
 version = "0.1.0"
-description = "Add your description here"
+description = "Transcription, diarization, and character assignment for Državni posao"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -14,6 +14,9 @@ dependencies = [
     "scikit-learn>=1.5.0",
     "whisperx>=3.8.6",
 ]
+
+[tool.ruff.lint.per-file-ignores]
+"notebooks/*.ipynb" = ["E402", "F401", "F821"]
 
 [[tool.uv.index]]
 url = "https://pypi-proxy.cloud.databricks.com/simple"

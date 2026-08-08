@@ -1,22 +1,36 @@
-# Python-generated files
+# Python
 __pycache__/
 *.py[oc]
 build/
 dist/
 wheels/
-*.egg-info
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
 
-# Virtual environments
-.venv
-data/
-mlruns/
-**/*.ipynb
-!label_characters.ipynb
-!listen_labels.ipynb
-!validate_alignment.ipynb
-!pipeline.ipynb
-!large-v3-hotwords-assignment-nb.ipynb
+# Local environments and tooling
+.venv/
+.databricks/
+.DS_Store
+
+# Generated data and artifacts
 artifacts/
 data/
+downloads/
+mlruns/
 transcripts/
 mlflow.db
+
+# Curated notebooks
+.ipynb_checkpoints/
+**/*.ipynb
+!notebooks/label_characters.ipynb
+!notebooks/listen_labels.ipynb
+!notebooks/validate_alignment.ipynb
+!notebooks/pipeline.ipynb
+!notebooks/large-v3-transcription.ipynb
+!notebooks/large-v3-transcription-assignment-nb.ipynb
+!notebooks/compare_assignment_runs.ipynb
+!notebooks/large-v3-hotwords-assignment-nb.ipynb
+!notebooks/large-v3-vad-realignment.ipynb
+!notebooks/character-assignment-eda.ipynb
