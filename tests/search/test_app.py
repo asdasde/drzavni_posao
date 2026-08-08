@@ -1,3 +1,4 @@
+import os
 import runpy
 import sys
 import types
@@ -18,7 +19,10 @@ class StreamlitAppTests(unittest.TestCase):
             / "app"
             / "streamlit.py"
         )
-        with patch.dict(sys.modules, {"streamlit": fake_streamlit}):
+        with (
+            patch.dict(os.environ, {"DP_DEVICE": "cpu"}),
+            patch.dict(sys.modules, {"streamlit": fake_streamlit}),
+        ):
             cls.namespace = runpy.run_path(
                 str(app_path), run_name="streamlit_file_execution_test"
             )
