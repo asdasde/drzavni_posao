@@ -15,6 +15,7 @@ from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any, Literal
 
+from ..common.device import resolve_torch_device
 from ..common.fingerprints import segment_corpus_fingerprint
 from ..common.io import read_jsonl, write_json
 from ..common.models import SegmentRecord
@@ -624,7 +625,11 @@ def build_argument_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Run one unmeasured query per method before collecting latency metrics",
     )
-    parser.add_argument("--device", default="cpu")
+    parser.add_argument(
+        "--device",
+        default="auto",
+        help="Torch device: auto (cuda→mps→cpu), or an explicit device string",
+    )
     parser.add_argument("--allow-model-download", action="store_true")
     parser.add_argument("--reranker-model", default=DEFAULT_RERANKER_MODEL)
     parser.add_argument(
@@ -654,12 +659,13 @@ def main() -> None:
     if not queries:
         raise ValueError(f"No evaluation queries in split {args.split!r}")
 
+    device = resolve_torch_device(args.device)
     reranker = None
     weights = HybridWeights()
     if {"cross_encoder", "hybrid_rerank"} & set(methods):
         reranker = CrossEncoderReranker(
             args.reranker_model,
-            device=args.device,
+            device=device,
             local_files_only=not args.allow_model_download,
             model_revision=args.reranker_revision,
         )
@@ -667,7 +673,7 @@ def main() -> None:
         segments_path=args.segments,
         bm25_path=args.bm25,
         vector_path=args.vectors,
-        dense_device=args.device,
+        dense_device=device,
         local_models_only=not args.allow_model_download,
         reranker=reranker,
     )

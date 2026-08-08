@@ -10,6 +10,7 @@ except ImportError as error:  # pragma: no cover - exercised only without UI ext
         "The web interface needs Streamlit. Install the 'search' optional dependencies."
     ) from error
 
+from drzavni_posao.search.common.device import resolve_torch_device
 from drzavni_posao.search.retrieval.engine import SearchEngine, SearchMethod
 from drzavni_posao.search.retrieval.rerank import (
     DEFAULT_RERANKER_MODEL,
@@ -22,6 +23,7 @@ BM25_PATH = Path(os.environ.get("DP_BM25_PATH", "artifacts/bm25_index.json"))
 VECTOR_PATH = Path(os.environ.get("DP_VECTOR_PATH", "artifacts/vector_index"))
 RERANKER_MODEL = os.environ.get("DP_RERANKER_MODEL", DEFAULT_RERANKER_MODEL)
 RERANKER_REVISION = os.environ.get("DP_RERANKER_REVISION")
+TORCH_DEVICE = resolve_torch_device(os.environ.get("DP_DEVICE", "auto"))
 
 METHODS_BY_LABEL: dict[str, SearchMethod] = {
     "BM25": "bm25",
@@ -56,6 +58,7 @@ def load_engine(use_vectors: bool, use_reranker: bool = False) -> SearchEngine:
     reranker = (
         CrossEncoderReranker(
             RERANKER_MODEL,
+            device=TORCH_DEVICE,
             local_files_only=True,
             model_revision=RERANKER_REVISION,
         )
@@ -66,6 +69,7 @@ def load_engine(use_vectors: bool, use_reranker: bool = False) -> SearchEngine:
         segments_path=SEGMENTS_PATH,
         bm25_path=BM25_PATH,
         vector_path=VECTOR_PATH if use_vectors else None,
+        dense_device=TORCH_DEVICE,
         local_models_only=True,
         reranker=reranker,
     )

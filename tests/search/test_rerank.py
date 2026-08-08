@@ -24,6 +24,7 @@ class CrossEncoderRerankerTests(unittest.TestCase):
         ):
             reranker = CrossEncoderReranker(
                 local_files_only=True,
+                device="cpu",
                 model_revision="release-tag",
             )
 

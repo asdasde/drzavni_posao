@@ -11,6 +11,7 @@ from typing import Protocol, Sequence
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
+from ..common.device import resolve_torch_device
 from ..common.fingerprints import (
     segment_corpus_fingerprint,
     semantic_corpus_fingerprint,
@@ -101,7 +102,7 @@ class SentenceTransformerTextEncoder:
         self,
         model_name: str = DEFAULT_MODEL,
         *,
-        device: str = "cpu",
+        device: str = "auto",
         local_files_only: bool = True,
         batch_size: int = 32,
         uses_e5_prefixes: bool | None = None,
@@ -117,6 +118,7 @@ class SentenceTransformerTextEncoder:
         self.name = model_name
         self.requested_revision = model_revision
         self.batch_size = batch_size
+        self.device = resolve_torch_device(device)
         self.uses_e5_prefixes = (
             "e5" in model_name.casefold()
             if uses_e5_prefixes is None
@@ -131,7 +133,7 @@ class SentenceTransformerTextEncoder:
         try:
             self.model = SentenceTransformer(
                 resolved_model_path,
-                device=device,
+                device=self.device,
                 local_files_only=True,
             )
         except TypeError as error:
@@ -382,7 +384,7 @@ class VectorIndex:
 def encoder_for_index(
     index: VectorIndex,
     *,
-    device: str = "cpu",
+    device: str = "auto",
     local_files_only: bool = True,
 ) -> TextEncoder:
     if index.model_name.startswith("hashing-smoke-"):
@@ -407,7 +409,11 @@ def main() -> None:
         "--model-revision",
         help="Optional Hugging Face commit, tag, or branch to pin",
     )
-    parser.add_argument("--device", default="cpu")
+    parser.add_argument(
+        "--device",
+        default="auto",
+        help="Torch device: auto (cuda→mps→cpu), or an explicit device string",
+    )
     parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument(
         "--allow-download",

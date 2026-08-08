@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Literal
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
+from ..common.device import resolve_torch_device
 from ..common.io import load_segments
 from ..common.models import SegmentRecord
 from ..query import ProcessedQuery, display_name, process_query
@@ -57,7 +58,7 @@ class SearchEngine:
         vector_index: VectorIndex | None = None,
         text_encoder: TextEncoder | None = None,
         reranker: Reranker | None = None,
-        dense_device: str = "cpu",
+        dense_device: str = "auto",
         local_models_only: bool = True,
     ) -> None:
         if not segments:
@@ -76,7 +77,7 @@ class SearchEngine:
         self.vector_index = vector_index
         self._text_encoder = text_encoder
         self.reranker = reranker
-        self.dense_device = dense_device
+        self.dense_device = resolve_torch_device(dense_device)
         self.local_models_only = local_models_only
 
     @classmethod
@@ -86,7 +87,7 @@ class SearchEngine:
         segments_path: Path = Path("data/segments.jsonl"),
         bm25_path: Path = Path("artifacts/bm25_index.json"),
         vector_path: Path | None = None,
-        dense_device: str = "cpu",
+        dense_device: str = "auto",
         local_models_only: bool = True,
         reranker: Reranker | None = None,
     ) -> "SearchEngine":
@@ -386,7 +387,11 @@ def build_argument_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--top-k", type=int, default=10)
     parser.add_argument("--candidate-k", type=int, default=50)
-    parser.add_argument("--device", default="cpu")
+    parser.add_argument(
+        "--device",
+        default="auto",
+        help="Torch device: auto (cuda→mps→cpu), or an explicit device string",
+    )
     parser.add_argument("--allow-model-download", action="store_true")
     parser.add_argument("--reranker-model", default=DEFAULT_RERANKER_MODEL)
     parser.add_argument(
@@ -400,12 +405,13 @@ def build_argument_parser() -> argparse.ArgumentParser:
 
 def main() -> None:
     args = build_argument_parser().parse_args()
+    device = resolve_torch_device(args.device)
 
     reranker = None
     if args.method in {"cross_encoder", "hybrid_rerank"}:
         reranker = CrossEncoderReranker(
             args.reranker_model,
-            device=args.device,
+            device=device,
             local_files_only=not args.allow_model_download,
             model_revision=args.reranker_revision,
         )
@@ -413,7 +419,7 @@ def main() -> None:
         segments_path=args.segments,
         bm25_path=args.bm25,
         vector_path=args.vectors,
-        dense_device=args.device,
+        dense_device=device,
         local_models_only=not args.allow_model_download,
         reranker=reranker,
     )

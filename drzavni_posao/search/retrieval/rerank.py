@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
+from ..common.device import resolve_torch_device
 from ..common.models import SegmentRecord
 from ..indexing.encoders import model_revision_from_path, resolve_model_path
 
@@ -24,7 +25,7 @@ class CrossEncoderReranker:
         self,
         model_name: str = DEFAULT_RERANKER_MODEL,
         *,
-        device: str = "cpu",
+        device: str = "auto",
         local_files_only: bool = True,
         batch_size: int = 50,
         model_revision: str | None = None,
@@ -39,6 +40,7 @@ class CrossEncoderReranker:
         self.name = model_name
         self.requested_revision = model_revision
         self.batch_size = batch_size
+        self.device = resolve_torch_device(device)
         resolved_model_path = resolve_model_path(
             model_name,
             local_files_only=local_files_only,
@@ -48,7 +50,7 @@ class CrossEncoderReranker:
         try:
             self.model = CrossEncoder(
                 resolved_model_path,
-                device=device,
+                device=self.device,
                 local_files_only=True,
             )
         except TypeError as error:
