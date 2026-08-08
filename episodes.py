@@ -23,7 +23,10 @@ CHANNEL_PLAYLISTS_URL = "https://www.youtube.com/@DrzavniPosaoSerija/playlists"
 PLAYLIST_RE = re.compile(
     r"^DRŽAVNI POSAO (?P<season>\d+)(?: - part 2)?$", re.IGNORECASE
 )
-EPISODE_RE = re.compile(r"\bEp\.\s*\d+\s*[:：]", re.IGNORECASE)
+EPISODE_RE = re.compile(
+    r"\bEp\.\s*(?P<number>\d+)\s*[:：]",
+    re.IGNORECASE,
+)
 DATE_RE = re.compile(r"\(\d{2}\.\d{2}\.\d{4}\.\)")
 PREFIX_RE = re.compile(r"^DRŽAVNI POSAO(?: \[HQ\])?\s*-\s*", re.IGNORECASE)
 YOUTUBE_ID_SUFFIX_RE = re.compile(r" \[[^\]]+\]$")
@@ -62,6 +65,23 @@ def is_episode(entry: dict) -> bool:
         and DATE_RE.search(title)
         and (EPISODE_RE.search(title) or PREFIX_RE.match(title))
     )
+
+
+def episode_number(entry: dict) -> int | None:
+    match = EPISODE_RE.search(entry.get("title") or "")
+    return int(match.group("number")) if match else None
+
+
+def comma_separated_numbers(value: str) -> set[int]:
+    try:
+        numbers = {int(item.strip()) for item in value.split(",")}
+    except ValueError as error:
+        raise argparse.ArgumentTypeError(
+            "expected comma-separated numbers"
+        ) from error
+    if not numbers or any(number < 1 for number in numbers):
+        raise argparse.ArgumentTypeError("numbers must be positive")
+    return numbers
 
 
 def is_rate_limited(result: subprocess.CompletedProcess[str]) -> bool:
@@ -141,7 +161,7 @@ def upload_file(
     run_databricks(command, echo_stdout=True)
 
 
-def discover_playlists(seasons: set[int]) -> list[dict]:
+def discover_playlists(seasons: set[int] | None) -> list[dict]:
     options = {
         "extract_flat": True,
         "ignoreerrors": True,
@@ -156,7 +176,9 @@ def discover_playlists(seasons: set[int]) -> list[dict]:
         if not item:
             continue
         match = PLAYLIST_RE.fullmatch(item.get("title") or "")
-        if match and int(match.group("season")) in seasons:
+        if match and (
+            seasons is None or int(match.group("season")) in seasons
+        ):
             playlists.append(
                 {
                     "season": int(match.group("season")),
@@ -266,9 +288,13 @@ def parser() -> argparse.ArgumentParser:
     )
     result.add_argument(
         "--season",
-        type=int,
-        action="append",
-        help=f"Season to process; repeat for multiple seasons (default: {DEFAULT_SEASON})",
+        type=comma_separated_numbers,
+        help=f"Comma-separated seasons to process (default: {DEFAULT_SEASON})",
+    )
+    result.add_argument(
+        "--episode",
+        type=comma_separated_numbers,
+        help="Comma-separated episode numbers to process",
     )
     result.add_argument(
         "--downloads",
@@ -307,11 +333,16 @@ def parser() -> argparse.ArgumentParser:
 
 def main() -> None:
     args = parser().parse_args()
-    seasons = set(args.season or [DEFAULT_SEASON])
+    episode_numbers = args.episode or set()
+    seasons = (
+        args.season
+        if args.season
+        else None if episode_numbers else {DEFAULT_SEASON}
+    )
     existing_names = remote_names(args.volume, args.profile)
     playlists = discover_playlists(seasons)
     if not playlists:
-        raise SystemExit(f"No playlists found for seasons: {sorted(seasons)}")
+        raise SystemExit(f"No playlists found for seasons: {sorted(seasons or [])}")
 
     actions = 0
     failures = []
@@ -321,7 +352,14 @@ def main() -> None:
             directory.mkdir(parents=True, exist_ok=True)
         local_names, uploads = upload_existing(directory, existing_names, args)
         actions += uploads
-        for entry in playlist_entries(playlist["url"]):
+        entries = playlist_entries(playlist["url"])
+        if episode_numbers:
+            entries = [
+                entry
+                for entry in entries
+                if episode_number(entry) in episode_numbers
+            ]
+        for entry in entries:
             try:
                 actions += download_and_upload(
                     entry,

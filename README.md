@@ -39,7 +39,8 @@ are intentionally excluded from Git.
 `uv run episodes.py` discovers season 3, uploads existing local MP3s, then
 downloads and immediately uploads any missing episodes.
 
-Use `--season` to select another season and `--dry-run` to preview the work.
+Use comma-separated `--season` or `--episode` values to select specific media,
+and `--dry-run` to preview the work.
 
 ## Databricks
 

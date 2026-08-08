@@ -12,9 +12,9 @@ uv run episodes.py --dry-run
 uv run episodes.py
 ```
 
-The command processes season 3 by default. Pass `--season` more than once to
-process multiple seasons. `--downloads`, `--volume`, `--profile`, and
-`--overwrite` customize the local and remote locations.
+The command processes season 3 by default. Use comma-separated `--season` or
+`--episode` values to select specific media. `--downloads`, `--volume`,
+`--profile`, and `--overwrite` customize the local and remote locations.
 
 ## Sync the Python package
 
