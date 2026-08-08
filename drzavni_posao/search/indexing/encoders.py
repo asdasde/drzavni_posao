@@ -5,6 +5,7 @@ from .vector import (
     HashingTextEncoder,
     SentenceTransformerTextEncoder,
     TextEncoder,
+    model_revision_from_path,
     normalize_vector,
     resolve_model_path,
 )
@@ -14,6 +15,7 @@ __all__ = [
     "HashingTextEncoder",
     "SentenceTransformerTextEncoder",
     "TextEncoder",
+    "model_revision_from_path",
     "normalize_vector",
     "resolve_model_path",
 ]

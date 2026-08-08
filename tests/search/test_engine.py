@@ -1,13 +1,22 @@
 from dataclasses import replace
+import json
 import tempfile
+from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 import numpy as np
 
 from drzavni_posao.search.common.models import SegmentRecord, format_timestamp
-from drzavni_posao.search.indexing.bm25 import BM25Index
-from drzavni_posao.search.indexing.vector import VectorIndex, normalize_vector
+from drzavni_posao.search.indexing.bm25 import BM25Hit, BM25Index
+from drzavni_posao.search.indexing.vector import (
+    DenseHit,
+    VECTOR_INDEX_VERSION,
+    VectorIndex,
+    encoder_for_index,
+    normalize_vector,
+)
 from drzavni_posao.search.retrieval.engine import (
     SearchEngine,
     build_argument_parser,
@@ -18,6 +27,7 @@ from drzavni_posao.search.retrieval.fusion import normalize_branch_scores
 
 class StubSemanticEncoder:
     name = "stub-semantic"
+    revision = "stub-revision"
     dimension = 2
     uses_e5_prefixes = False
 
@@ -202,13 +212,82 @@ class RetrievalTests(unittest.TestCase):
         self.assertEqual(len(results), 3)
         self.assertIn("cross_encoder", results[0].score_components)
 
+    def test_hybrid_reranking_excludes_unscored_tail_candidates(self) -> None:
+        segments = [
+            make_segment(f"s{index:02}", f"e{index:02}", "shared")
+            for index in range(60)
+        ]
+        segment_ids = [segment.segment_id for segment in segments]
+        bm25 = SimpleNamespace(
+            segment_ids=segment_ids,
+            search=lambda _tokens, *, top_k: [
+                BM25Hit(segment_id, 1.0) for segment_id in segment_ids[:50]
+            ][:top_k],
+        )
+        vector = SimpleNamespace(
+            segment_ids=segment_ids,
+            dimension=2,
+            search_vector=lambda _query, *, top_k: [
+                DenseHit(segment_id, 1.0) for segment_id in segment_ids[10:60]
+            ][:top_k],
+        )
+        encoder = SimpleNamespace(
+            dimension=2,
+            encode_query=lambda _text: np.array([1.0, 0.0], dtype=np.float32),
+        )
+        reranker = SimpleNamespace(
+            name="selective-reranker",
+            score=lambda _query, candidates: {
+                segment.segment_id: (1.0 if segment.segment_id == "s10" else 0.0)
+                for segment in candidates
+            },
+        )
+        engine = SearchEngine(
+            segments,
+            bm25,
+            vector_index=vector,
+            text_encoder=encoder,
+            reranker=reranker,
+        )
+
+        results = engine.search(
+            "shared",
+            method="hybrid_rerank",
+            top_k=10,
+            candidate_k=50,
+            rerank_k=50,
+            group_by_episode=False,
+            deduplicate_overlaps=False,
+        )
+
+        self.assertEqual(results[0].segment.segment_id, "s10")
+        self.assertTrue(
+            all("reranker" in result.score_components for result in results)
+        )
+        self.assertFalse(
+            {result.segment.segment_id for result in results} & set(segment_ids[50:60])
+        )
+
+    def test_hybrid_reranking_requires_enough_scored_candidates(self) -> None:
+        with self.assertRaisesRegex(ValueError, "rerank_k must be at least top_k"):
+            self.engine.search(
+                "Boškić",
+                method="hybrid_rerank",
+                top_k=3,
+                rerank_k=2,
+            )
+
     def test_vector_and_bm25_serialization_preserve_ranking(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             self.bm25.save(root / "bm25.json")
             self.vector.save(root / "vectors")
+            metadata = json.loads((root / "vectors.json").read_text(encoding="utf-8"))
+            self.assertEqual(VECTOR_INDEX_VERSION, 1)
+            self.assertEqual(metadata["version"], 1)
             loaded_bm25 = BM25Index.load(root / "bm25.json", segments=self.segments)
             loaded_vector = VectorIndex.load(root / "vectors", segments=self.segments)
+            self.assertEqual(loaded_vector.model_revision, "stub-revision")
             engine = SearchEngine(
                 self.segments,
                 loaded_bm25,
@@ -232,6 +311,21 @@ class RetrievalTests(unittest.TestCase):
             ]
             with self.assertRaisesRegex(ValueError, "semantic segment corpus"):
                 VectorIndex.load(path, segments=changed)
+
+    def test_index_encoder_reuses_the_recorded_model_revision(self) -> None:
+        with patch(
+            "drzavni_posao.search.indexing.vector.SentenceTransformerTextEncoder",
+            return_value=self.encoder,
+        ) as factory:
+            encoder_for_index(self.vector, device="cpu", local_files_only=True)
+
+        factory.assert_called_once_with(
+            self.vector.model_name,
+            device="cpu",
+            local_files_only=True,
+            uses_e5_prefixes=self.vector.uses_e5_prefixes,
+            model_revision="stub-revision",
+        )
 
     def test_youtube_timestamp_preserves_existing_query(self) -> None:
         self.assertEqual(

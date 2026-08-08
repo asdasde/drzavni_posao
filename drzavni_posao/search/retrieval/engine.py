@@ -19,6 +19,9 @@ from .rerank import CrossEncoderReranker, DEFAULT_RERANKER_MODEL, Reranker
 
 
 SearchMethod = Literal["bm25", "dense", "hybrid", "cross_encoder", "hybrid_rerank"]
+RERANK_BASE_WEIGHT = 0.30
+RERANK_MODEL_WEIGHT = 0.70
+OVERLAP_DEDUPLICATION_THRESHOLD = 0.60
 
 
 def timestamped_youtube_url(url: str | None, seconds: float) -> str | None:
@@ -190,6 +193,8 @@ class SearchEngine:
             raise ValueError("Query cannot be empty")
         if top_k < 1 or candidate_k < 1:
             raise ValueError("top_k and candidate_k must be positive")
+        if method == "hybrid_rerank" and rerank_k < top_k:
+            raise ValueError("rerank_k must be at least top_k for hybrid reranking")
         weights.validate()
         query = process_query(query_text)
 
@@ -248,6 +253,7 @@ class SearchEngine:
 
         reranker_scores: dict[str, float] = {}
         final_scores = dict(base_scores)
+        rankable_ids: set[str] | list[str] = candidate_ids
         if method == "cross_encoder":
             if self.reranker is None:
                 raise RuntimeError(
@@ -268,12 +274,14 @@ class SearchEngine:
                 query.semantic, [self.by_id[item] for item in preliminary]
             )
             reranker_scores = normalize_branch_scores(raw_reranker)
-            for segment_id in preliminary:
-                final_scores[segment_id] = 0.30 * base_scores[
-                    segment_id
-                ] + 0.70 * reranker_scores.get(segment_id, 0.0)
+            final_scores = {
+                segment_id: RERANK_BASE_WEIGHT * base_scores[segment_id]
+                + RERANK_MODEL_WEIGHT * reranker_scores.get(segment_id, 0.0)
+                for segment_id in preliminary
+            }
+            rankable_ids = preliminary
 
-        ranked_ids = sorted(candidate_ids, key=lambda item: (-final_scores[item], item))
+        ranked_ids = sorted(rankable_ids, key=lambda item: (-final_scores[item], item))
         selected_ids: list[str] = []
         used_episodes: set[str] = set()
         selected_segments: list[SegmentRecord] = []
@@ -283,7 +291,8 @@ class SearchEngine:
                 continue
             if deduplicate_overlaps and any(
                 existing.episode_id == segment.episode_id
-                and _temporal_overlap_ratio(existing, segment) >= 0.60
+                and _temporal_overlap_ratio(existing, segment)
+                >= OVERLAP_DEDUPLICATION_THRESHOLD
                 for existing in selected_segments
             ):
                 continue
@@ -380,6 +389,10 @@ def build_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--allow-model-download", action="store_true")
     parser.add_argument("--reranker-model", default=DEFAULT_RERANKER_MODEL)
+    parser.add_argument(
+        "--reranker-revision",
+        help="Optional Hugging Face commit, tag, or branch to pin",
+    )
     parser.add_argument("--all-segments", action="store_true")
     parser.add_argument("--json", action="store_true", dest="json_output")
     return parser
@@ -394,6 +407,7 @@ def main() -> None:
             args.reranker_model,
             device=args.device,
             local_files_only=not args.allow_model_download,
+            model_revision=args.reranker_revision,
         )
     engine = SearchEngine.from_paths(
         segments_path=args.segments,

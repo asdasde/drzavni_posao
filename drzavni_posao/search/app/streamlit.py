@@ -21,6 +21,7 @@ SEGMENTS_PATH = Path(os.environ.get("DP_SEGMENTS_PATH", "data/segments.jsonl"))
 BM25_PATH = Path(os.environ.get("DP_BM25_PATH", "artifacts/bm25_index.json"))
 VECTOR_PATH = Path(os.environ.get("DP_VECTOR_PATH", "artifacts/vector_index"))
 RERANKER_MODEL = os.environ.get("DP_RERANKER_MODEL", DEFAULT_RERANKER_MODEL)
+RERANKER_REVISION = os.environ.get("DP_RERANKER_REVISION")
 
 METHODS_BY_LABEL: dict[str, SearchMethod] = {
     "BM25": "bm25",
@@ -53,7 +54,11 @@ def _method_for_label(label: str) -> SearchMethod:
 @st.cache_resource(show_spinner="Loading search indexes…")
 def load_engine(use_vectors: bool, use_reranker: bool = False) -> SearchEngine:
     reranker = (
-        CrossEncoderReranker(RERANKER_MODEL, local_files_only=True)
+        CrossEncoderReranker(
+            RERANKER_MODEL,
+            local_files_only=True,
+            model_revision=RERANKER_REVISION,
+        )
         if use_reranker
         else None
     )

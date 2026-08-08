@@ -19,16 +19,26 @@ class CrossEncoderRerankerTests(unittest.TestCase):
             ),
             patch(
                 "drzavni_posao.search.retrieval.rerank.resolve_model_path",
-                return_value="/models/reranker",
-            ),
+                return_value="/cache/models--reranker/snapshots/abc123",
+            ) as resolver,
         ):
-            CrossEncoderReranker(local_files_only=True)
+            reranker = CrossEncoderReranker(
+                local_files_only=True,
+                model_revision="release-tag",
+            )
 
         cross_encoder.assert_called_once_with(
-            "/models/reranker",
+            "/cache/models--reranker/snapshots/abc123",
             device="cpu",
             local_files_only=True,
         )
+        resolver.assert_called_once_with(
+            reranker.name,
+            local_files_only=True,
+            revision="release-tag",
+        )
+        self.assertEqual(reranker.revision, "abc123")
+        self.assertEqual(reranker.requested_revision, "release-tag")
 
 
 if __name__ == "__main__":

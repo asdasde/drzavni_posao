@@ -20,13 +20,16 @@ from ..common.models import SegmentRecord
 from ..text import normalize_text
 
 
-VECTOR_INDEX_VERSION = 2
+VECTOR_INDEX_VERSION = 1
+SUPPORTED_VECTOR_INDEX_VERSIONS = {VECTOR_INDEX_VERSION}
 DEFAULT_MODEL = "intfloat/multilingual-e5-base"
 Float32Array = NDArray[np.float32]
 
 
 class TextEncoder(Protocol):
     name: str
+    revision: str | None
+    requested_revision: str | None
     dimension: int
     uses_e5_prefixes: bool
 
@@ -35,7 +38,21 @@ class TextEncoder(Protocol):
     def encode_query(self, text: str) -> Float32Array: ...
 
 
-def resolve_model_path(model_name: str, *, local_files_only: bool) -> str:
+def model_revision_from_path(path: str | Path) -> str | None:
+    """Return the commit hash from a Hugging Face snapshot path, when present."""
+    parts = Path(path).parts
+    for index, part in enumerate(parts[:-1]):
+        if part == "snapshots":
+            return parts[index + 1]
+    return None
+
+
+def resolve_model_path(
+    model_name: str,
+    *,
+    local_files_only: bool,
+    revision: str | None = None,
+) -> str:
     """Resolve a Hub ID to a snapshot directory before model construction.
 
     Some transformer submodules do not consistently propagate
@@ -56,6 +73,7 @@ def resolve_model_path(model_name: str, *, local_files_only: bool) -> str:
         return snapshot_download(
             repo_id=model_name,
             local_files_only=local_files_only,
+            revision=revision,
         )
     except Exception as error:
         mode = "local cache" if local_files_only else "Hugging Face Hub"
@@ -86,6 +104,7 @@ class SentenceTransformerTextEncoder:
         local_files_only: bool = True,
         batch_size: int = 32,
         uses_e5_prefixes: bool | None = None,
+        model_revision: str | None = None,
     ) -> None:
         try:
             from sentence_transformers import SentenceTransformer
@@ -95,6 +114,7 @@ class SentenceTransformerTextEncoder:
                 "optional dependencies first."
             ) from error
         self.name = model_name
+        self.requested_revision = model_revision
         self.batch_size = batch_size
         self.uses_e5_prefixes = (
             "e5" in model_name.casefold()
@@ -102,8 +122,11 @@ class SentenceTransformerTextEncoder:
             else uses_e5_prefixes
         )
         resolved_model_path = resolve_model_path(
-            model_name, local_files_only=local_files_only
+            model_name,
+            local_files_only=local_files_only,
+            revision=model_revision,
         )
+        self.revision = model_revision_from_path(resolved_model_path)
         try:
             self.model = SentenceTransformer(
                 resolved_model_path,
@@ -156,6 +179,8 @@ class HashingTextEncoder:
         if dimension < 8:
             raise ValueError("Hashing encoder dimension must be at least 8")
         self.name = f"hashing-smoke-{dimension}"
+        self.revision = None
+        self.requested_revision = None
         self.dimension = dimension
         self.uses_e5_prefixes = False
 
@@ -196,6 +221,8 @@ class VectorIndex:
         uses_e5_prefixes: bool,
         corpus_fingerprint: str,
         semantic_fingerprint: str,
+        model_revision: str | None = None,
+        model_requested_revision: str | None = None,
     ) -> None:
         values = np.asarray(vectors, dtype=np.float32)
         if dimension <= 0 or values.shape != (len(segment_ids), dimension):
@@ -204,6 +231,8 @@ class VectorIndex:
         self.vectors = values
         self.dimension = dimension
         self.model_name = model_name
+        self.model_revision = model_revision
+        self.model_requested_revision = model_requested_revision
         self.uses_e5_prefixes = uses_e5_prefixes
         self.corpus_fingerprint = corpus_fingerprint
         self.semantic_corpus_fingerprint = semantic_fingerprint
@@ -228,6 +257,8 @@ class VectorIndex:
             vectors=vectors,
             dimension=encoder.dimension,
             model_name=encoder.name,
+            model_revision=getattr(encoder, "revision", None),
+            model_requested_revision=getattr(encoder, "requested_revision", None),
             uses_e5_prefixes=encoder.uses_e5_prefixes,
             corpus_fingerprint=segment_corpus_fingerprint(segments),
             semantic_fingerprint=semantic_corpus_fingerprint(segments),
@@ -274,6 +305,8 @@ class VectorIndex:
                 "version": VECTOR_INDEX_VERSION,
                 "algorithm": "exact_cosine_float32",
                 "model_name": self.model_name,
+                "model_revision": self.model_revision,
+                "model_requested_revision": self.model_requested_revision,
                 "uses_e5_prefixes": self.uses_e5_prefixes,
                 "dimension": self.dimension,
                 "row_count": len(self.segment_ids),
@@ -291,7 +324,7 @@ class VectorIndex:
     ) -> "VectorIndex":
         metadata_path, default_vectors_path = cls.artifact_paths(path)
         metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-        if metadata.get("version") != VECTOR_INDEX_VERSION:
+        if metadata.get("version") not in SUPPORTED_VECTOR_INDEX_VERSIONS:
             raise ValueError(
                 f"Unsupported vector artifact version: {metadata.get('version')}"
             )
@@ -308,11 +341,21 @@ class VectorIndex:
         if metadata.get("byte_order", sys.byteorder) != sys.byteorder:
             values.byteswap(inplace=True)
         values = values.reshape(row_count, dimension)
+        model_revision = metadata.get("model_revision")
+        model_requested_revision = metadata.get("model_requested_revision")
         index = cls(
             segment_ids=[str(item) for item in metadata["segment_ids"]],
             vectors=values,
             dimension=dimension,
             model_name=str(metadata["model_name"]),
+            model_revision=(
+                str(model_revision) if model_revision is not None else None
+            ),
+            model_requested_revision=(
+                str(model_requested_revision)
+                if model_requested_revision is not None
+                else None
+            ),
             uses_e5_prefixes=bool(metadata.get("uses_e5_prefixes", False)),
             corpus_fingerprint=str(metadata["corpus_fingerprint"]),
             semantic_fingerprint=str(metadata["semantic_corpus_fingerprint"]),
@@ -348,6 +391,7 @@ def encoder_for_index(
         device=device,
         local_files_only=local_files_only,
         uses_e5_prefixes=index.uses_e5_prefixes,
+        model_revision=index.model_revision,
     )
 
 
@@ -358,6 +402,10 @@ def main() -> None:
     parser.add_argument("--segments", type=Path, default=Path("data/segments.jsonl"))
     parser.add_argument("--output", type=Path, default=Path("artifacts/vector_index"))
     parser.add_argument("--model", default=DEFAULT_MODEL)
+    parser.add_argument(
+        "--model-revision",
+        help="Optional Hugging Face commit, tag, or branch to pin",
+    )
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument(
@@ -382,6 +430,7 @@ def main() -> None:
             device=args.device,
             local_files_only=not args.allow_download,
             batch_size=args.batch_size,
+            model_revision=args.model_revision,
         )
     index = VectorIndex.build(segments, encoder)
     index.save(args.output)

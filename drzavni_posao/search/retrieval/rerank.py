@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Protocol
 
 from ..common.models import SegmentRecord
-from ..indexing.encoders import resolve_model_path
+from ..indexing.encoders import model_revision_from_path, resolve_model_path
 
 
 DEFAULT_RERANKER_MODEL = "cross-encoder/mmarco-mMiniLMv2-L12-H384-v1"
@@ -11,6 +11,8 @@ DEFAULT_RERANKER_MODEL = "cross-encoder/mmarco-mMiniLMv2-L12-H384-v1"
 
 class Reranker(Protocol):
     name: str
+    revision: str | None
+    requested_revision: str | None
 
     def score(self, query: str, segments: list[SegmentRecord]) -> dict[str, float]: ...
 
@@ -25,6 +27,7 @@ class CrossEncoderReranker:
         device: str = "cpu",
         local_files_only: bool = True,
         batch_size: int = 16,
+        model_revision: str | None = None,
     ) -> None:
         try:
             from sentence_transformers import CrossEncoder
@@ -34,10 +37,14 @@ class CrossEncoderReranker:
                 "optional dependencies first."
             ) from error
         self.name = model_name
+        self.requested_revision = model_revision
         self.batch_size = batch_size
         resolved_model_path = resolve_model_path(
-            model_name, local_files_only=local_files_only
+            model_name,
+            local_files_only=local_files_only,
+            revision=model_revision,
         )
+        self.revision = model_revision_from_path(resolved_model_path)
         try:
             self.model = CrossEncoder(
                 resolved_model_path,
