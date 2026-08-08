@@ -1,5 +1,23 @@
 # Sync the package to Databricks
 
+## Download and upload audio MP3s
+
+`MediaStore` reads from `/Volumes/luka_erceg/drzavni_posao/audios`.
+The episode utility uploads existing local MP3s, then downloads and immediately
+uploads missing episodes:
+
+```sh
+databricks auth describe --profile staging
+uv run episodes.py --dry-run
+uv run episodes.py
+```
+
+The command processes season 3 by default. Pass `--season` more than once to
+process multiple seasons. `--downloads`, `--volume`, `--profile`, and
+`--overwrite` customize the local and remote locations.
+
+## Sync the Python package
+
 Authenticate with the `staging` profile, then run from the repository root:
 
 ```sh
@@ -15,41 +33,16 @@ databricks sync drzavni_posao \
 Add `--dry-run` to preview the upload. This syncs only the Python package; it
 does not upload notebooks, tests, gallery data, or other repository files.
 
-Upload the notebooks separately:
+## Sync notebooks
+
+Sync every notebook in one command:
 
 ```sh
-databricks workspace import \
-  /Users/luka.erceg@databricks.com/drzavni_posao/pipeline \
-  --profile staging --format JUPYTER --language PYTHON --overwrite \
-  --file pipeline.ipynb
-
-databricks workspace import \
-  /Users/luka.erceg@databricks.com/drzavni_posao/label_characters \
-  --profile staging --format JUPYTER --language PYTHON --overwrite \
-  --file label_characters.ipynb
-
-databricks workspace import \
-  /Users/luka.erceg@databricks.com/drzavni_posao/listen_labels \
-  --profile staging --format JUPYTER --language PYTHON --overwrite \
-  --file listen_labels.ipynb
-
-databricks workspace import \
-  /Users/luka.erceg@databricks.com/drzavni_posao/probe_asr_vs_align \
-  --profile staging --format JUPYTER --language PYTHON --overwrite \
-  --file probe_asr_vs_align.ipynb
-
-databricks workspace import \
-  /Users/luka.erceg@databricks.com/drzavni_posao/probe_collapsed_retry \
-  --profile staging --format JUPYTER --language PYTHON --overwrite \
-  --file probe_collapsed_retry.ipynb
-
-databricks workspace import \
-  /Users/luka.erceg@databricks.com/drzavni_posao/probe_collapse_thresholds \
-  --profile staging --format JUPYTER --language PYTHON --overwrite \
-  --file probe_collapse_thresholds.ipynb
-
-databricks workspace import \
-  /Users/luka.erceg@databricks.com/drzavni_posao/large-v3-hotwords-assignment-nb \
-  --profile staging --format JUPYTER --language PYTHON --overwrite \
-  --file large-v3-hotwords-assignment-nb.ipynb
+databricks sync notebooks \
+  /Users/luka.erceg@databricks.com/drzavni_posao \
+  --profile staging \
+  --full
 ```
+
+Add `--dry-run` to preview the notebook sync. The notebooks stay at the
+workspace root so their existing package imports continue to work.
