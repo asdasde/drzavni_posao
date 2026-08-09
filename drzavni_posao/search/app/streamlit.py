@@ -45,8 +45,7 @@ def _available_methods(vector_available: bool) -> list[str]:
 
 
 def _default_method_index(methods: list[str]) -> int:
-    default = "Hybrid" if "Hybrid" in methods else "BM25"
-    return methods.index(default)
+    return methods.index("BM25")
 
 
 def _method_for_label(label: str) -> SearchMethod:

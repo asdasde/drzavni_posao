@@ -25,9 +25,7 @@ class PipelineConfigTests(unittest.TestCase):
                 asr_options={"no_repeat_ngram_size": 5},
             ),
             diarization=(
-                DiarizerConfig(hf_token="diar-secret")
-                if diarization
-                else None
+                DiarizerConfig(hf_token="diar-secret") if diarization else None
             ),
             character_assigner=(
                 CharacterAssignerConfig(
@@ -49,7 +47,7 @@ class PipelineConfigTests(unittest.TestCase):
         )
 
     def test_tracking_dict_contains_behavior_but_omits_secrets(self):
-        configuration = self.config().to_tracking_dict()
+        configuration = self.config().to_dict()
         serialized = json.dumps(configuration)
 
         self.assertEqual(
@@ -90,7 +88,7 @@ class PipelineConfigTests(unittest.TestCase):
 
     def test_generated_name_uses_model_stages_and_config_hash(self):
         config = self.config()
-        config_id = configuration_id(config.to_tracking_dict())
+        config_id = configuration_id(config.to_dict(exclude_defaults=True))
 
         self.assertEqual(
             config.generated_name(),
@@ -120,9 +118,7 @@ class PipelineExecutionTests(unittest.TestCase):
         tracker = Mock()
         tracker.pipeline_run.return_value = self.active_run("parent")
         tracker.episode_run.side_effect = lambda _: self.active_run()
-        tracker.episode_run_states.return_value = (
-            {"1": state} if state else {}
-        )
+        tracker.episode_run_states.return_value = {"1": state} if state else {}
         tracker.pending_stages.return_value = pending
         return tracker
 
@@ -134,9 +130,7 @@ class PipelineExecutionTests(unittest.TestCase):
         with (
             patch("drzavni_posao.pipeline.Transcriber") as transcriber_type,
             patch("drzavni_posao.pipeline.Diarizer") as diarizer_type,
-            patch(
-                "drzavni_posao.pipeline.CharacterAssigner"
-            ) as assigner_type,
+            patch("drzavni_posao.pipeline.CharacterAssigner") as assigner_type,
             patch(
                 "drzavni_posao.pipeline.alignment_metrics",
                 return_value={"aligned": 1},
@@ -156,12 +150,11 @@ class PipelineExecutionTests(unittest.TestCase):
                 tags={"kind": "test"},
             )
 
-        config_id = configuration_id(config.to_tracking_dict())
         name = config.generated_name()
         self.assertEqual(run_id, "parent")
         tracker.pipeline_run.assert_called_once_with(
             name,
-            config.to_tracking_dict(),
+            config,
             stages={Stage.TRANSCRIPTION},
             tags={"kind": "test"},
         )
@@ -189,9 +182,7 @@ class PipelineExecutionTests(unittest.TestCase):
 
         with (
             patch("drzavni_posao.pipeline.Transcriber") as transcriber_type,
-            patch(
-                "drzavni_posao.pipeline.CharacterAssigner"
-            ) as assigner_type,
+            patch("drzavni_posao.pipeline.CharacterAssigner") as assigner_type,
             patch(
                 "drzavni_posao.pipeline.assignment_metrics",
                 return_value={"named": 1},

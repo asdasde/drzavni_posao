@@ -1,7 +1,7 @@
 [project]
 name = "drzavni-posao"
 version = "0.1.0"
-description = "Add your description here"
+description = "Transcription, diarization, and character assignment for Državni posao"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -9,8 +9,10 @@ dependencies = [
     "jupyter>=1.1.1",
     "mlflow-skinny>=3.14.0",
     "numpy>=2.0.0",
+    "pandas>=2.2.0",
     "pydantic>=2.13.4",
     "ruff>=0.15.20",
+    "scikit-learn>=1.5.0",
     "whisperx>=3.8.6",
 ]
 
@@ -39,8 +41,8 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 include = ["drzavni_posao", "drzavni_posao.*"]
 
-[tool.ruff]
-exclude = ["*.ipynb"]
+[tool.ruff.lint.per-file-ignores]
+"notebooks/*.ipynb" = ["E402", "F401", "F821"]
 
 [[tool.uv.index]]
 url = "https://pypi-proxy.cloud.databricks.com/simple"

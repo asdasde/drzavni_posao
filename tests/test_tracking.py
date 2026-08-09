@@ -3,11 +3,13 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import mlflow
 
 import drzavni_posao
 from drzavni_posao import tracking
+from drzavni_posao.pipeline import PipelineConfig
 
 Stage = tracking.Stage
 
@@ -46,6 +48,21 @@ class MlflowTrackerTests(unittest.TestCase):
         mlflow.set_tracking_uri(self._tracking_uri)
         self._tempdir.cleanup()
 
+    def start_run(self, name, configuration, **kwargs):
+        return self.tracker.pipeline_run(
+            name,
+            PipelineConfig.from_dict(configuration),
+            **kwargs,
+        )
+
+    def start_fork(self, source_run_id, name, configuration, **kwargs):
+        return self.tracker.fork_run(
+            source_run_id,
+            name,
+            PipelineConfig.from_dict(configuration),
+            **kwargs,
+        )
+
     @staticmethod
     def configuration(
         *,
@@ -53,22 +70,30 @@ class MlflowTrackerTests(unittest.TestCase):
         diar_model="diar-a",
         character_assigner_threshold=0.5,
     ):
+        from drzavni_posao.character_assigner import CharacterAssignerConfig
+        from drzavni_posao.diarizer import DiarizerConfig
+        from drzavni_posao.embedder import EmbedderConfig
+        from drzavni_posao.transcriber import TranscriberConfig
+
         return {
             "audio": {
                 "path": "/audio",
                 "trim_start": 25,
                 "trim_end": 7,
             },
-            "transcription": {
-                "model": transcription_model,
-                "options": ["beam"],
-            },
-            "diarization": {"model": diar_model},
-            "character_assigner": {
-                "threshold": character_assigner_threshold,
-                "embedder": {"model": "embed-a"},
-                "gallery": {"Đorđe": ["sample-a"]},
-            },
+            "transcription": TranscriberConfig(
+                model_name=transcription_model,
+            ).model_dump(),
+            "diarization": DiarizerConfig(
+                diarize_model=diar_model,
+            ).model_dump(exclude={"hf_token"}),
+            "character_assigner": CharacterAssignerConfig(
+                min_similarity=character_assigner_threshold,
+                embedder=EmbedderConfig(embed_model="embed-a"),
+                speaker_samples={
+                    "Đorđe": [{"episode_key": "1", "start": 0.0, "end": 1.0}]
+                },
+            ).model_dump(exclude={"embedder": {"hf_token"}}),
         }
 
     @staticmethod
@@ -125,13 +150,13 @@ class MlflowTrackerTests(unittest.TestCase):
             "audio": configuration["audio"],
         }
 
-        with self.tracker.pipeline_run(
+        with self.start_run(
             "first",
             configuration,
             stages={Stage.TRANSCRIPTION},
         ) as first:
             pass
-        with self.tracker.pipeline_run(
+        with self.start_run(
             "different-display-name",
             reordered,
             stages={Stage.TRANSCRIPTION},
@@ -143,13 +168,13 @@ class MlflowTrackerTests(unittest.TestCase):
         self.assertRegex(run.data.tags["config_id"], r"^[0-9a-f]{64}$")
 
     def test_pipeline_run_separates_changed_configuration(self):
-        with self.tracker.pipeline_run(
+        with self.start_run(
             "first",
             self.configuration(),
             stages={Stage.TRANSCRIPTION},
         ) as first:
             pass
-        with self.tracker.pipeline_run(
+        with self.start_run(
             "changed",
             self.configuration(transcription_model="other"),
             stages={Stage.TRANSCRIPTION},
@@ -160,7 +185,7 @@ class MlflowTrackerTests(unittest.TestCase):
 
     def test_episode_run_states_use_key_and_completed_stage_not_split_or_status(self):
         configuration = self.configuration()
-        with self.tracker.pipeline_run(
+        with self.start_run(
             "source",
             configuration,
             stages={Stage.TRANSCRIPTION, Stage.DIARIZATION},
@@ -187,8 +212,36 @@ class MlflowTrackerTests(unittest.TestCase):
             frozenset({Stage.DIARIZATION}),
         )
 
+    def test_child_runs_follow_all_search_pages(self):
+        class Page(list):
+            def __init__(self, runs, token):
+                super().__init__(runs)
+                self.token = token
+
+        first = SimpleNamespace(info=SimpleNamespace(run_id="first"))
+        second = SimpleNamespace(info=SimpleNamespace(run_id="second"))
+        self.tracker.client = MagicMock()
+        self.tracker.client.get_run.return_value = SimpleNamespace(
+            info=SimpleNamespace(experiment_id="experiment")
+        )
+        self.tracker.client.search_runs.side_effect = [
+            Page([first], "next-page"),
+            Page([second], None),
+        ]
+
+        runs = self.tracker._child_runs("parent")
+
+        self.assertEqual(runs, [first, second])
+        self.assertEqual(
+            [
+                call.kwargs["page_token"]
+                for call in self.tracker.client.search_runs.call_args_list
+            ],
+            [None, "next-page"],
+        )
+
     def test_episode_run_reuses_unique_child(self):
-        with self.tracker.pipeline_run(
+        with self.start_run(
             "parent",
             self.configuration(),
             stages={Stage.TRANSCRIPTION},
@@ -206,7 +259,7 @@ class MlflowTrackerTests(unittest.TestCase):
 
     def test_log_and_restore_stage_round_trip(self):
         configuration = self.configuration()
-        with self.tracker.pipeline_run(
+        with self.start_run(
             "source",
             configuration,
             stages={Stage.TRANSCRIPTION},
@@ -275,7 +328,7 @@ class MlflowTrackerTests(unittest.TestCase):
             diar_model="diar-b",
             character_assigner_threshold=0.7,
         )
-        with self.tracker.pipeline_run(
+        with self.start_run(
             "source",
             source_configuration,
             stages={Stage.TRANSCRIPTION},
@@ -289,13 +342,13 @@ class MlflowTrackerTests(unittest.TestCase):
             with self.tracker.episode_run("2"):
                 pass
 
-        target_run_id = self.tracker.fork_run(
+        target_run_id = self.start_fork(
             source_run_id,
             "derived",
             target_configuration,
             copy_until=Stage.TRANSCRIPTION,
         )
-        repeated_run_id = self.tracker.fork_run(
+        repeated_run_id = self.start_fork(
             source_run_id,
             "different-display-name",
             target_configuration,
@@ -327,16 +380,49 @@ class MlflowTrackerTests(unittest.TestCase):
         )
         self.assertEqual(restored.transcript.render(), "zdravo")
 
-        with self.tracker.pipeline_run(
+        with self.start_run(
             "derived",
             target_configuration,
             stages={Stage.DIARIZATION, Stage.CHARACTER_ASSIGNER},
         ) as resumed:
             self.assertEqual(resumed, target_run_id)
 
+    def test_empty_options_match_a_configuration_recorded_without_them(self):
+        recorded = self.configuration()
+        with_empty_options = self.configuration()
+        with_empty_options["transcription"]["vad_options"] = {}
+
+        # Empty option dicts are defaults, so they match an absent field.
+        self.assertEqual(
+            PipelineConfig.from_dict(recorded).to_dict(exclude_defaults=True),
+            PipelineConfig.from_dict(with_empty_options).to_dict(exclude_defaults=True),
+        )
+
+        with self.start_run(
+            "source",
+            recorded,
+            stages={Stage.TRANSCRIPTION},
+        ) as source_run_id:
+            with self.tracker.episode_run("1"):
+                self.tracker.log_stage(
+                    self.episode(),
+                    Stage.TRANSCRIPTION,
+                    {"word_count": 2},
+                )
+
+        derived = self.configuration(character_assigner_threshold=0.9)
+        derived["transcription"]["vad_options"] = {}
+        forked = self.start_fork(
+            source_run_id,
+            "forked",
+            derived,
+            copy_until=Stage.TRANSCRIPTION,
+        )
+        self.assertNotEqual(forked, source_run_id)
+
     def test_fork_run_rejects_changed_copied_configuration(self):
         source_configuration = self.configuration()
-        with self.tracker.pipeline_run(
+        with self.start_run(
             "source",
             source_configuration,
             stages={Stage.TRANSCRIPTION},
@@ -344,7 +430,7 @@ class MlflowTrackerTests(unittest.TestCase):
             pass
 
         with self.assertRaisesRegex(ValueError, "transcription"):
-            self.tracker.fork_run(
+            self.start_fork(
                 source_run_id,
                 "invalid",
                 self.configuration(transcription_model="transcription-b"),
@@ -353,7 +439,7 @@ class MlflowTrackerTests(unittest.TestCase):
 
     def test_parent_averages_and_episode_metric_query_use_latest_children(self):
         configuration = self.configuration()
-        with self.tracker.pipeline_run(
+        with self.start_run(
             "source",
             configuration,
             stages={Stage.TRANSCRIPTION},

@@ -803,8 +803,10 @@ dependencies = [
     { name = "jupyter" },
     { name = "mlflow-skinny" },
     { name = "numpy" },
+    { name = "pandas" },
     { name = "pydantic" },
     { name = "ruff" },
+    { name = "scikit-learn" },
     { name = "whisperx" },
 ]
 
@@ -823,9 +825,11 @@ requires-dist = [
     { name = "jupyter", specifier = ">=1.1.1" },
     { name = "mlflow-skinny", specifier = ">=3.14.0" },
     { name = "numpy", specifier = ">=2.0.0" },
+    { name = "pandas", specifier = ">=2.2.0" },
     { name = "pydantic", specifier = ">=2.13.4" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=8.3.0" },
     { name = "ruff", specifier = ">=0.15.20" },
+    { name = "scikit-learn", specifier = ">=1.5.0" },
     { name = "sentence-transformers", marker = "extra == 'search'", specifier = ">=3.4.0,<5.3" },
     { name = "streamlit", marker = "extra == 'search'", specifier = ">=1.42.0" },
     { name = "whisperx", specifier = ">=3.8.6" },

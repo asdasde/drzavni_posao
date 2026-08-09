@@ -36,7 +36,7 @@ class StreamlitAppTests(unittest.TestCase):
         )
         self.assertEqual(
             namespace["_default_method_index"](methods),
-            2,
+            0,
         )
         self.assertEqual(
             namespace["_method_for_label"]("Hybrid + reranker"),

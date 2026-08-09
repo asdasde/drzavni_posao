@@ -49,25 +49,45 @@ class PipelineConfig(BaseModel):
             character_assigner=character_assigner,
         )
 
-    def to_tracking_dict(self) -> dict:
+    def to_dict(self, *, exclude_defaults: bool = False) -> dict:
         configuration = {
             "audio": {
                 "trim_start": self.trim_start,
                 "trim_end": self.trim_end,
             },
-            "transcription": self.transcription.model_dump(),
+            "transcription": self.transcription.model_dump(
+                exclude_defaults=exclude_defaults
+            ),
         }
         if self.diarization is not None:
             configuration["diarization"] = self.diarization.model_dump(
-                exclude={"hf_token"}
+                exclude_defaults=exclude_defaults,
+                exclude={"hf_token"},
             )
         if self.character_assigner is not None:
-            configuration["character_assigner"] = (
-                self.character_assigner.model_dump(
-                    exclude={"embedder": {"hf_token"}}
-                )
+            configuration["character_assigner"] = self.character_assigner.model_dump(
+                exclude_defaults=exclude_defaults,
+                exclude={"embedder": {"hf_token"}},
             )
         return configuration
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> PipelineConfig:
+        return cls(
+            trim_start=data["audio"]["trim_start"],
+            trim_end=data["audio"]["trim_end"],
+            transcription=TranscriberConfig.model_validate(data["transcription"]),
+            diarization=(
+                DiarizerConfig.model_validate(data["diarization"])
+                if data.get("diarization") is not None
+                else None
+            ),
+            character_assigner=(
+                CharacterAssignerConfig.model_validate(data["character_assigner"])
+                if data.get("character_assigner") is not None
+                else None
+            ),
+        )
 
     @property
     def stages(self) -> tuple[Stage, ...]:
@@ -79,13 +99,10 @@ class PipelineConfig(BaseModel):
         return tuple(stages)
 
     def generated_name(self) -> str:
-        config_id = configuration_id(self.to_tracking_dict())
+        config_id = configuration_id(self.to_dict(exclude_defaults=True))
         model = Path(self.transcription.model_name).name
         parts = ["transcription", _slug(model)]
-        parts.extend(
-            stage.value.replace("_", "-")
-            for stage in self.stages[1:]
-        )
+        parts.extend(stage.value.replace("_", "-") for stage in self.stages[1:])
         return f"{'-'.join(parts)}-{config_id[:8]}"
 
     def runner_for(self, stage: Stage, media: MediaStore):
@@ -108,10 +125,7 @@ def run_pipeline(
     name: str | None = None,
     tags: Mapping[str, Any] | None = None,
 ) -> str:
-    if (
-        config.trim_start != media.trim_start
-        or config.trim_end != media.trim_end
-    ):
+    if config.trim_start != media.trim_start or config.trim_end != media.trim_end:
         raise ValueError("PipelineConfig trimming must match MediaStore")
 
     stages = config.stages
@@ -122,12 +136,11 @@ def run_pipeline(
     else:
         requested = stages[: stages.index(through) + 1]
 
-    configuration = config.to_tracking_dict()
     run_name = name or config.generated_name()
 
     with tracker.pipeline_run(
         run_name,
-        configuration,
+        config,
         stages=set(requested),
         tags=tags,
     ) as parent_run_id:
@@ -136,9 +149,7 @@ def run_pipeline(
 
         for episode_key in episode_keys:
             state = states.get(episode_key)
-            completed = (
-                state.completed_stages if state else frozenset()
-            )
+            completed = state.completed_stages if state else frozenset()
             pending = tracker.pending_stages(
                 completed=completed,
                 requested=set(requested),
@@ -150,11 +161,7 @@ def run_pipeline(
             tracker.log_parent_averages(parent_run_id)
             return parent_run_id
 
-        needed = {
-            stage
-            for _, _, pending in todo
-            for stage in pending
-        }
+        needed = {stage for _, _, pending in todo for stage in pending}
         runners = {}
 
         try:
@@ -168,9 +175,7 @@ def run_pipeline(
                     episode = media.episode(episode_key)
                     with tracker.episode_run(episode_key):
                         if state is not None:
-                            first_pending_index = config.stages.index(
-                                pending[0]
-                            )
+                            first_pending_index = config.stages.index(pending[0])
                             if first_pending_index > 0:
                                 tracker.restore_stage(
                                     episode,

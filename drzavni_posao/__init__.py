@@ -27,6 +27,7 @@ _EXPORT_MODULES = {
     "CharacterAssignerConfig": "character_assigner",
     "MlflowTracker": "tracking",
     "Stage": "tracking",
+    "evaluate_run": "evaluation",
 }
 
 __all__ = [
@@ -47,6 +48,7 @@ __all__ = [
     "CharacterAssignerConfig",
     "MlflowTracker",
     "Stage",
+    "evaluate_run",
 ]
 
 

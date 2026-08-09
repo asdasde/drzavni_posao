@@ -27,6 +27,21 @@ The `search` extra installs Sentence Transformers and Streamlit. The
 transcription pipeline's WhisperX, PyTorch, MLflow, and Pydantic dependencies
 are base-project dependencies.
 
+### Data utilities
+
+`uv run episodes.py` processes season 3 by default: it uploads existing local
+MP3s, then downloads and uploads missing episodes. Use comma-separated
+`--season` or `--episode` values and `--dry-run` to preview the work.
+
+Download locally without accessing Databricks:
+
+```bash
+uv run episodes.py --local --episode 1,10,11,12
+```
+
+See [`docs/databricks-sync.md`](docs/databricks-sync.md) for package, notebook,
+and audio upload commands.
+
 ### Runtime asset contract
 
 Git tracks only curated search inputs: episode metadata and evaluation queries.
