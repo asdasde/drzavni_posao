@@ -16,16 +16,20 @@ episode as one document.
 Python 3.12+ and [uv](https://docs.astral.sh/uv/) are recommended.
 
 ```bash
-# Core pipeline and test dependencies
-uv sync --extra test
+# Transcription pipeline (WhisperX, MLflow, Jupyter) and tests
+uv sync --extra transcribe --extra test
 
 # Search, semantic retrieval, Streamlit, and tests
 uv sync --extra search --extra test
+
+# HTTP search API (FastAPI + uvicorn)
+uv sync --extra search --extra api
 ```
 
-The `search` extra installs Sentence Transformers and Streamlit. WhisperX,
-MLflow, and Pydantic are base-project dependencies; WhisperX installs PyTorch
-transitively.
+The `search` extra installs Sentence Transformers and Streamlit. The
+transcription pipeline's WhisperX, MLflow, and Jupyter dependencies live in the
+`transcribe` extra (WhisperX's torchcodec dependency has no Linux arm64 wheels,
+so keeping it optional lets the search API Docker image build on arm64).
 
 ### Data utilities
 
@@ -241,6 +245,38 @@ The canonical episode catalog supplies every title, broadcast date, and
 YouTube URL. `--source-time-offset` remains a corpus-build setting because it
 depends on how the transcript audio was trimmed. Results use the catalog URL
 to create timestamped links and embed videos in the Streamlit app.
+
+## HTTP search API
+
+`drzavni_posao/search/api/app.py` is a thin FastAPI wrapper around the same
+engine, built for the React frontend in `frontend/`:
+
+```bash
+uv sync --extra search --extra api
+uv run dp-serve   # 0.0.0.0:8000, override with DP_API_PORT
+```
+
+`POST /search` accepts `{query, method, top_k, candidate_k, group_by_episode}`
+(methods `bm25`, `dense`, `hybrid`, `hybrid_rerank`) and returns
+`{query, method, took_seconds, results}` where each result is
+`SearchResult.to_dict()`. `GET /health` lists the currently loadable methods
+(`bm25` only until the vector index is built). It honours the same `DP_*` path,
+device, and reranker variables as Streamlit, plus `DP_CORS_ORIGINS`
+(comma-separated; default `http://localhost:5173` for the Vite dev server).
+Missing artifacts surface as HTTP 503 with an explanatory message.
+
+## Docker
+
+With `data/segments.jsonl` and `artifacts/` built on the host:
+
+```bash
+docker compose up --build
+```
+
+serves the API on http://localhost:8000 (image `docker/search.Dockerfile`,
+artifacts and Hugging Face models baked in) and the frontend on
+http://localhost:8080 (`frontend/Dockerfile`, nginx proxying `/search` and
+`/health` to the backend container — no CORS involved).
 
 ## Evaluation
 
