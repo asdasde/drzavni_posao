@@ -25,8 +25,20 @@ EPISODE_KEY = re.compile(r"Ep\.\s*(\d+)")
 # Whisper omits these by design, so they are counted apart from lost content.
 FILLERS = frozenset(
     {
-        "a", "aha", "ah", "e", "eh", "ej", "hm", "ma", "mm",
-        "o", "onaj", "ovaj", "pa", "uhm",
+        "a",
+        "aha",
+        "ah",
+        "e",
+        "eh",
+        "ej",
+        "hm",
+        "ma",
+        "mm",
+        "o",
+        "onaj",
+        "ovaj",
+        "pa",
+        "uhm",
     }
 )
 
@@ -84,10 +96,10 @@ def scribe_to_transcript(export: dict) -> dict:
     }
 
 
-def scribe_transcripts(directory: str | Path) -> dict[str, dict]:
+def scribe_transcripts(directory: Path) -> dict[str, dict]:
     """Episode key → Scribe export, converted to the pipeline transcript format."""
     found = {}
-    for path in sorted(Path(directory).glob("*.json")):
+    for path in sorted(directory.glob("*.json")):
         match = EPISODE_KEY.search(path.name)
         if match is None:
             logger.warning("Skipping %s: no episode number in filename", path.name)
@@ -98,9 +110,9 @@ def scribe_transcripts(directory: str | Path) -> dict[str, dict]:
     return found
 
 
-def load_transcripts(directory: str | Path) -> dict[str, dict]:
+def load_transcripts(directory: Path) -> dict[str, dict]:
     """Episode key → transcript for every ``<key>.json`` MediaStore wrote."""
-    paths = sorted(Path(directory).glob("*.json"))
+    paths = sorted(directory.glob("*.json"))
     logger.info("Loaded %d transcripts from %s", len(paths), directory)
     return {path.stem: json.loads(path.read_text(encoding="utf-8")) for path in paths}
 
@@ -108,9 +120,7 @@ def load_transcripts(directory: str | Path) -> dict[str, dict]:
 def words(transcript: dict) -> list[dict]:
     """Every word of a transcript, in order, whichever system produced it."""
     return [
-        word
-        for segment in transcript["segments"]
-        for word in segment.get("words", [])
+        word for segment in transcript["segments"] for word in segment.get("words", [])
     ]
 
 
@@ -150,9 +160,7 @@ def turn_lengths(segments: list[dict]) -> dict[int, int]:
     share one, so a turn is a run of segments rather than a single segment.
     """
     speakers = [
-        segment.get("speaker")
-        for segment in segments
-        for _ in segment.get("words", [])
+        segment.get("speaker") for segment in segments for _ in segment.get("words", [])
     ]
     lengths: dict[int, int] = {}
     start = 0
@@ -215,8 +223,7 @@ class Comparison:
         )
         dropped = self.dropped()
         fillers = sum(
-            re.sub(r"[^\w]", "", word["word"].lower()) in FILLERS
-            for word in dropped
+            re.sub(r"[^\w]", "", word["word"].lower()) in FILLERS for word in dropped
         )
         return {
             "reference_words": total,
@@ -289,10 +296,7 @@ def compare_all(
     if missing:
         logger.warning("No pipeline transcript for reference episodes: %s", missing)
     logger.info("Comparing %d episodes", len(shared))
-    return [
-        compare(key, references[key], transcripts[key])
-        for key in shared
-    ]
+    return [compare(key, references[key], transcripts[key]) for key in shared]
 
 
 def disagreements(

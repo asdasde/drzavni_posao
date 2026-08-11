@@ -52,9 +52,10 @@ class Diarizer:
         """Diarize *episode*'s audio and tag its segments with `speaker`; return the episode."""
         if episode.transcript is None:
             raise ValueError(
-                f"Episode {episode.key!r} has no transcript; run Transcriber first"
+                f"Episode {episode.metadata.episode_number!r} has no transcript; "
+                "run Transcriber first"
             )
-        logger.info("Diarizing episode %r", episode.key)
+        logger.info("Diarizing episode %r", episode.metadata.episode_number)
         audio = episode.audio()
         diarize_segments = self.diarize(
             audio,
@@ -73,7 +74,7 @@ class Diarizer:
         episode.transcript.segments = result["segments"]
         logger.info(
             "Diarized episode %r: %d turns, %d speakers",
-            episode.key,
+            episode.metadata.episode_number,
             len(episode.diarization),
             len({t["speaker"] for t in episode.diarization}),
         )

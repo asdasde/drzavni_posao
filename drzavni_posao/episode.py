@@ -35,20 +35,19 @@ class EpisodeCatalog(BaseModel):
 
     def model_post_init(self, __context: object) -> None:
         for metadata in self.episodes:
-            audio_name = self._audio_name(Path(metadata.youtube_title))
+            audio_name = self._normalized_audio_name(metadata.youtube_title)
             if audio_name in self._by_audio_name:
                 raise ValueError(f"Duplicate audio filename: {audio_name}")
             self._by_audio_name[audio_name] = metadata
 
     @staticmethod
-    def _audio_name(source: Path) -> str:
-        name = source.name
+    def _normalized_audio_name(name: str) -> str:
         if name.casefold().endswith(".mp3"):
             name = name[:-4]
         return unicodedata.normalize("NFKC", f"{name}.mp3")
 
     def metadata_for(self, source: Path) -> EpisodeMetadata:
-        audio_name = self._audio_name(source)
+        audio_name = self._normalized_audio_name(source.name)
         try:
             return self._by_audio_name[audio_name]
         except KeyError:

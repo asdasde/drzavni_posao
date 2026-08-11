@@ -11,7 +11,7 @@ class CharacterAssignerTests(unittest.TestCase):
         assigner._assign_per_cluster = Mock()
         assigner._assign_per_segment = Mock()
         episode = SimpleNamespace(
-            key="1",
+            metadata=SimpleNamespace(episode_number=1),
             transcript=SimpleNamespace(
                 segments=[
                     {

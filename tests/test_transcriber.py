@@ -125,7 +125,7 @@ class VadRealignmentTests(unittest.TestCase):
         transcriber.align_model = object()
         transcriber.align_meta = {}
         episode = MagicMock()
-        episode.key = "72"
+        episode.metadata.episode_number = 72
         episode.full_name = "72.mp3"
         episode.audio.return_value = np.zeros(30 * SR, dtype=np.float32)
 

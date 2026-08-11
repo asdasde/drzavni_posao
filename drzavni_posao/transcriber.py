@@ -87,7 +87,7 @@ class Transcriber:
 
     def run(self, episode: Episode) -> Episode:
         """Transcribe + align *episode*'s audio; set episode.transcript and return it."""
-        logger.info("Transcribing episode %r", episode.key)
+        logger.info("Transcribing episode %r", episode.metadata.episode_number)
         audio = episode.audio()
         with capture_vad_segments(
             self.asr.vad_model,
@@ -133,10 +133,13 @@ class Transcriber:
         for segment in result["segments"]:
             for word in segment.get("words", []):
                 word["word"] = transliterate_serbian(word["word"])
-        episode.transcript = Transcript(result["segments"], file=episode.full_name)
+        episode.transcript = Transcript(
+            result["segments"],
+            file=episode.metadata.youtube_title,
+        )
         logger.info(
             "Transcribed episode %r: %d segments",
-            episode.key,
+            episode.metadata.episode_number,
             len(episode.transcript.segments),
         )
         return episode
