@@ -30,7 +30,6 @@ EPISODE_RE = re.compile(
 DATE_RE = re.compile(r"\(\d{2}\.\d{2}\.\d{4}\.\)")
 PREFIX_RE = re.compile(r"^DRŽAVNI POSAO(?: \[HQ\])?\s*-\s*", re.IGNORECASE)
 YOUTUBE_ID_SUFFIX_RE = re.compile(r" \[[^\]]+\]$")
-YOUTUBE_ID_RE = re.compile(r" \[([^\]]+)\]$")
 EXCLUDED_TITLES = {
     "DRŽAVNI POSAO [HQ] - Masoni specijal (02.01.2014.)",
     "DRŽAVNI POSAO [HQ] - Najbolji momenti (30.12.2013.)",
@@ -51,11 +50,6 @@ def volume_name(path: Path) -> str:
 
 def canonical_name(name: str) -> str:
     return unicodedata.normalize("NFKC", name)
-
-
-def video_id(path: Path) -> str | None:
-    match = YOUTUBE_ID_RE.search(path.stem)
-    return match.group(1) if match else None
 
 
 def is_episode(entry: dict) -> bool:
@@ -214,8 +208,6 @@ def upload_existing(
     for local in sorted(directory.glob("*.mp3")):
         name = canonical_name(volume_name(local))
         local_names.add(name)
-        if local_video_id := video_id(local):
-            local_names.add(local_video_id)
         if args.local:
             continue
         if name in existing_names and not args.overwrite:
@@ -244,7 +236,7 @@ def download_and_upload(
 ) -> bool:
     title = entry.get("title") or entry["id"]
     name = canonical_name(f"{title}.mp3")
-    if name in local_names or entry["id"] in local_names:
+    if name in local_names:
         return False
     if name in existing_names and not args.overwrite:
         return False
@@ -258,7 +250,7 @@ def download_and_upload(
     options = {
         "format": "bestaudio/best",
         "js_runtimes": {"node": {}},
-        "outtmpl": str(directory / "%(title)s [%(id)s].%(ext)s"),
+        "outtmpl": str(directory / "%(title)s.%(ext)s"),
         "postprocessors": [
             {
                 "key": "FFmpegExtractAudio",
