@@ -30,7 +30,7 @@ def read_jsonl(path: Path) -> Iterator[dict[str, Any]]:
 
 def load_segments(path: Path) -> list[SegmentRecord]:
     """Load and validate the conformed segment corpus."""
-    segments = [SegmentRecord.from_dict(row) for row in read_jsonl(path)]
+    segments = [SegmentRecord(**row) for row in read_jsonl(path)]
     if not segments:
         raise ValueError(f"No segments found in {path}")
     ids = [segment.segment_id for segment in segments]

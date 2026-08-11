@@ -13,38 +13,8 @@ def format_timestamp(seconds: float) -> str:
 
 
 @dataclass(slots=True)
-class EpisodeRecord:
-    episode_id: str
-    episode_number: int | None
-    episode_title: str
-    broadcast_date: str | None
-    source_file: str
-    transcript_run_id: str
-    source_time_offset_seconds: float = 0.0
-    youtube_url: str | None = None
-
-    def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
-
-    @classmethod
-    def from_dict(cls, value: dict[str, Any]) -> "EpisodeRecord":
-        return cls(
-            episode_id=str(value["episode_id"]),
-            episode_number=value.get("episode_number"),
-            episode_title=str(value.get("episode_title") or "Untitled episode"),
-            broadcast_date=value.get("broadcast_date"),
-            source_file=str(value.get("source_file") or ""),
-            transcript_run_id=str(value.get("transcript_run_id") or "unknown"),
-            source_time_offset_seconds=float(
-                value.get("source_time_offset_seconds", 0.0)
-            ),
-            youtube_url=value.get("youtube_url"),
-        )
-
-
-@dataclass(slots=True)
 class SegmentRecord:
-    episode_id: str
+    youtube_video_id: str
     episode_title: str
     segment_id: str
     start_seconds: float
@@ -67,41 +37,3 @@ class SegmentRecord:
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
-
-    @classmethod
-    def from_dict(cls, value: dict[str, Any]) -> "SegmentRecord":
-        start_seconds = float(value.get("start_seconds", 0.0))
-        end_seconds = float(value.get("end_seconds", start_seconds))
-        offset = float(value.get("source_time_offset_seconds", 0.0))
-        video_start = float(value.get("video_start_seconds", start_seconds + offset))
-        video_end = float(value.get("video_end_seconds", end_seconds + offset))
-        return cls(
-            episode_id=str(value["episode_id"]),
-            episode_title=str(value.get("episode_title") or "Untitled episode"),
-            segment_id=str(value["segment_id"]),
-            start_seconds=start_seconds,
-            end_seconds=end_seconds,
-            start_time=str(value.get("start_time") or format_timestamp(start_seconds)),
-            end_time=str(value.get("end_time") or format_timestamp(end_seconds)),
-            video_start_seconds=video_start,
-            video_end_seconds=video_end,
-            video_start_time=str(
-                value.get("video_start_time") or format_timestamp(video_start)
-            ),
-            video_end_time=str(
-                value.get("video_end_time") or format_timestamp(video_end)
-            ),
-            text_original=str(value.get("text_original") or ""),
-            text_semantic=str(
-                value.get("text_semantic") or value.get("text_original") or ""
-            ),
-            text_normalized=str(value.get("text_normalized") or ""),
-            speakers=[str(item) for item in value.get("speakers", [])],
-            speaker_keys=[str(item) for item in value.get("speaker_keys", [])],
-            source_segment_indices=[
-                int(item) for item in value.get("source_segment_indices", [])
-            ],
-            youtube_url=value.get("youtube_url"),
-            source_file=str(value.get("source_file") or ""),
-            source_time_offset_seconds=offset,
-        )
