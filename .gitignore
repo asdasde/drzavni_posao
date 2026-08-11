@@ -16,7 +16,7 @@ wheels/
 # Generated data and artifacts
 artifacts/
 data/*
-!data/episode_metadata.jsonl
+!data/youtube_episodes.json
 !data/evaluation_queries.jsonl
 !data/evaluation_queries_expansion.jsonl
 downloads/
