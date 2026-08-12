@@ -49,7 +49,7 @@ class CrossEncoderReranker:
         self.revision = model_revision_from_path(resolved_model_path)
         try:
             self.model = CrossEncoder(
-                resolved_model_path,
+                str(resolved_model_path),
                 device=self.device,
                 local_files_only=True,
             )

@@ -39,7 +39,13 @@ class MediaStore:
             else (Path(f"{item.youtube_title}.mp3") for item in self.catalog.episodes)
         )
         episodes = [
-            Episode(path, self.catalog.metadata_for(path), ...) for path in paths
+            Episode(
+                path,
+                self.catalog.metadata_for(path),
+                trim_start=self.trim_start,
+                trim_end=self.trim_end,
+            )
+            for path in paths
         ]
         index = {episode.key: episode for episode in episodes}
         logger.info("Indexed %d episodes under %s", len(index), self.audio_dir)

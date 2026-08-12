@@ -39,3 +39,4 @@ mlflow.db
 !notebooks/character-assignment-eda.ipynb
 !notebooks/ellipsis-split-analysis.ipynb
 scripts/export_labeling_run.py
+.isaac/

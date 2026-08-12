@@ -70,9 +70,7 @@ def comma_separated_numbers(value: str) -> set[int]:
     try:
         numbers = {int(item.strip()) for item in value.split(",")}
     except ValueError as error:
-        raise argparse.ArgumentTypeError(
-            "expected comma-separated numbers"
-        ) from error
+        raise argparse.ArgumentTypeError("expected comma-separated numbers") from error
     if not numbers or any(number < 1 for number in numbers):
         raise argparse.ArgumentTypeError("numbers must be positive")
     return numbers
@@ -100,8 +98,7 @@ def run_databricks(
             return result
         if is_rate_limited(result) and attempt < retries:
             print(
-                f"rate limited (attempt {attempt}/{retries}); "
-                f"sleeping {delay:.0f}s...",
+                f"rate limited (attempt {attempt}/{retries}); sleeping {delay:.0f}s...",
                 flush=True,
             )
             time.sleep(delay)
@@ -137,9 +134,7 @@ def remote_names(volume: str, profile: str) -> set[str]:
     }
 
 
-def upload_file(
-    local: Path, volume: str, profile: str, *, overwrite: bool
-) -> None:
+def upload_file(local: Path, volume: str, profile: str, *, overwrite: bool) -> None:
     remote = f"{volume.rstrip('/')}/{volume_name(local)}"
     command = [
         "databricks",
@@ -170,9 +165,7 @@ def discover_playlists(seasons: set[int] | None) -> list[dict]:
         if not item:
             continue
         match = PLAYLIST_RE.fullmatch(item.get("title") or "")
-        if match and (
-            seasons is None or int(match.group("season")) in seasons
-        ):
+        if match and (seasons is None or int(match.group("season")) in seasons):
             playlists.append(
                 {
                     "season": int(match.group("season")),
@@ -192,9 +185,7 @@ def playlist_entries(url: str) -> list[dict]:
     with YoutubeDL(options) as ydl:
         playlist = ydl.extract_info(url, download=False)
     return [
-        entry
-        for entry in playlist.get("entries") or []
-        if entry and is_episode(entry)
+        entry for entry in playlist.get("entries") or [] if entry and is_episode(entry)
     ]
 
 
@@ -339,13 +330,9 @@ def main() -> None:
     args = parser().parse_args()
     episode_numbers = args.episode or set()
     seasons = (
-        args.season
-        if args.season
-        else None if episode_numbers else {DEFAULT_SEASON}
+        args.season if args.season else None if episode_numbers else {DEFAULT_SEASON}
     )
-    existing_names = (
-        set() if args.local else remote_names(args.volume, args.profile)
-    )
+    existing_names = set() if args.local else remote_names(args.volume, args.profile)
     playlists = discover_playlists(seasons)
     if not playlists:
         raise SystemExit(f"No playlists found for seasons: {sorted(seasons or [])}")
@@ -361,9 +348,7 @@ def main() -> None:
         entries = playlist_entries(playlist["url"])
         if episode_numbers:
             entries = [
-                entry
-                for entry in entries
-                if episode_number(entry) in episode_numbers
+                entry for entry in entries if episode_number(entry) in episode_numbers
             ]
         for entry in entries:
             try:

@@ -7,9 +7,9 @@ This repository contains two connected workflows for *Državni posao* episodes:
 2. a scene-search application that retrieves the most likely **episode, time
    interval, and transcript evidence** for a natural-language description.
 
-The reference search build contains 60 episodes and 1,473 searchable segments.
-Search operates at scene level instead of treating an entire episode as one
-document.
+The reference benchmark covers 60 episodes. The segment count depends on the
+chunking settings. Search operates at scene level instead of treating an entire
+episode as one document.
 
 ## Installation
 
@@ -23,9 +23,9 @@ uv sync --extra test
 uv sync --extra search --extra test
 ```
 
-The `search` extra installs Sentence Transformers and Streamlit. The
-transcription pipeline's WhisperX, PyTorch, MLflow, and Pydantic dependencies
-are base-project dependencies.
+The `search` extra installs Sentence Transformers and Streamlit. WhisperX,
+MLflow, and Pydantic are base-project dependencies; WhisperX installs PyTorch
+transitively.
 
 ### Data utilities
 
@@ -36,7 +36,7 @@ MP3s, then downloads and uploads missing episodes. Use comma-separated
 Download locally without accessing Databricks:
 
 ```bash
-uv run episodes.py --local --episode 1,10,11,12
+uv run episodes.py --local --season 3 --episode 1,10,11,12
 ```
 
 See [`docs/databricks-sync.md`](docs/databricks-sync.md) for package, notebook,
@@ -69,21 +69,26 @@ these stages:
    enrolled voice clips. With diarization, each cluster is matched once; without
    it, each transcript segment is matched independently.
 
-`MediaStore` indexes `*.mp3` files recursively, applies the configured opening
-and closing trims to every episode, and writes each completed transcript as
-both JSON and text beneath its run directory.
+`MediaStore` loads `data/youtube_episodes.json`, matches each flat `*.mp3` by
+the catalog's normalized `youtube_title`, and constructs episodes containing
+both audio and catalog metadata. Files missing from the catalog are rejected.
+Without an audio directory, it constructs episodes directly from the catalog
+so transcript-only workflows can run. It applies configured trims and writes
+completed transcripts beneath its run directory.
 
 Use `PipelineConfig.from_media(...)` to keep trimming configuration aligned
 with the store, construct an `MlflowTracker` for an existing MLflow experiment,
 then call `run_pipeline`:
 
 ```python
+from pathlib import Path
+
 from drzavni_posao import MediaStore, MlflowTracker, PipelineConfig
 from drzavni_posao import TranscriberConfig, run_pipeline
 
 media = MediaStore(
-    audio_dir="audio",
-    run_dir="transcripts",
+    audio_dir=Path("audio"),
+    run_dir=Path("transcripts"),
     trim_start=25,
     trim_end=0,
 )
@@ -136,10 +141,10 @@ environment or runtime configuration; do not commit them.
 
 ## Search corpus and indexing
 
-The corpus is built locally from one canonical transcript snapshot per episode.
+The corpus is built locally from one transcript JSON per episode.
 It preserves original transcript evidence for display and derives normalized
-lexical and semantic fields for retrieval. The segmenter performs Unicode NFC
-cleanup, Serbian Cyrillic-to-Latin transliteration, diacritic folding,
+lexical and semantic fields for retrieval. The segmenter performs Serbian
+Cyrillic-to-Latin transliteration, whitespace cleanup, diacritic folding,
 controlled aliases, and overlapping, gap-aware chunks of up to eight source
 utterances and 60 seconds.
 
@@ -147,14 +152,13 @@ The reference build uses a 25-second source-time offset because the acquisition
 notebook removed the intro before transcription. Segment records therefore
 preserve both transcript-relative and video-relative timestamps.
 
-To rebuild the corpus and BM25 index from the complete named snapshot:
+To rebuild the corpus and BM25 index from a transcript export:
 
 ```bash
 uv run dp-segment \
-  --input transcripts/d69ff97f/named \
-  --episodes-output data/episodes.jsonl \
+  --input transcripts/d69ff97f \
   --segments-output data/segments.jsonl \
-  --metadata data/episode_metadata.jsonl \
+  --catalog data/youtube_episodes.json \
   --source-time-offset 25
 
 uv run dp-build-bm25 \
@@ -176,7 +180,7 @@ uv run --extra search dp-build-vectors \
 
 Vector and reranker models are **local-only by default**. The commands do not
 download models unless `--allow-download` (or `--allow-model-download` for a
-search or evaluation reranker) is passed. `--hashing-smoke` builds a
+search or evaluation dense encoder or reranker) is passed. `--hashing-smoke` builds a
 dependency-free, non-semantic test index only; it must not be presented as
 semantic retrieval. Use `--model-revision` and `--reranker-revision` to pin a
 Hugging Face commit, tag, or branch.
@@ -233,16 +237,10 @@ after dense or hybrid search is selected, always local-only, and presents a
 user-facing error rather than downloading one. `DP_RERANKER_MODEL` and
 `DP_RERANKER_REVISION` select an exact locally cached reranker snapshot.
 
-Optional episode metadata can add a `youtube_url` and source offset while
-segmenting:
-
-```json
-{"episode_id":"DP-E0001","youtube_url":"https://www.youtube.com/watch?v=REAL_ID","source_time_offset_seconds":25}
-```
-
-When a URL is present, results create timestamped links and the Streamlit app
-embeds the video from the scene's video-relative start time. All 60 bundled
-episode-metadata records include source YouTube URLs.
+The canonical episode catalog supplies every title, broadcast date, and
+YouTube URL. `--source-time-offset` remains a corpus-build setting because it
+depends on how the transcript audio was trimmed. Results use the catalog URL
+to create timestamped links and embed videos in the Streamlit app.
 
 ## Evaluation
 
@@ -267,10 +265,10 @@ evaluation artifact, not from example numbers or historical reports.
 BM25 is also the `dp-evaluate` default. Evaluation outputs include a complete
 run manifest: query, corpus, index, and vector-file hashes; vector and reranker
 model revisions; fusion and reranking weights; ranking, metric, and bootstrap
-settings; runtime/package versions; and Git commit/dirty state. Outputs remain
-generated artifacts under `artifacts/`; do not commit them. Publish benchmark
-results to MLflow, object storage, or another artifact store when they need to
-be shared.
+settings; project package, Python, and platform versions; and Git commit/dirty
+state. Outputs remain generated artifacts under `artifacts/`; do not commit
+them. Publish benchmark results to MLflow, object storage, or another artifact
+store when they need to be shared.
 
 ## Data contracts
 
@@ -278,9 +276,9 @@ A segment record contains provenance, retrieval fields, and both time bases:
 
 ```json
 {
-  "episode_id": "DP-E0022",
+  "youtube_video_id": "i3ONQLQQ0Po",
   "episode_title": "Košarka",
-  "segment_id": "DP-E0022_0014",
+  "segment_id": "i3ONQLQQ0Po_0014",
   "start_seconds": 116.3,
   "end_seconds": 142.1,
   "video_start_seconds": 141.3,
@@ -310,9 +308,8 @@ drzavni_posao/
     evaluation/             # judgments, metrics, evaluation runner
     app/streamlit.py        # search interface
 data/
-  episode_metadata.jsonl   # curated input
+  youtube_episodes.json    # canonical episode catalog
   evaluation_queries*.jsonl
-  episodes.jsonl           # generated, ignored
   segments.jsonl           # generated, ignored
 artifacts/                  # generated indexes/results, ignored
 transcripts/                # generated pipeline output, ignored

@@ -166,7 +166,8 @@ def main() -> None:
             title_column, score_column = st.columns([4, 1])
             with title_column:
                 st.markdown(
-                    f"### {result.rank}. {segment.episode_id} — {segment.episode_title}"
+                    f"### {result.rank}. {segment.episode_title} "
+                    f"[{segment.youtube_video_id}]"
                 )
                 st.write(
                     f"**Vreme u videu:** {segment.video_start_time}–{segment.video_end_time}"

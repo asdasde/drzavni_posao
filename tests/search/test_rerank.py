@@ -1,6 +1,7 @@
 import sys
 import types
 import unittest
+from pathlib import Path
 from unittest.mock import Mock, patch
 
 from drzavni_posao.search.retrieval.rerank import CrossEncoderReranker
@@ -19,7 +20,7 @@ class CrossEncoderRerankerTests(unittest.TestCase):
             ),
             patch(
                 "drzavni_posao.search.retrieval.rerank.resolve_model_path",
-                return_value="/cache/models--reranker/snapshots/abc123",
+                return_value=Path("/cache/models--reranker/snapshots/abc123"),
             ) as resolver,
         ):
             reranker = CrossEncoderReranker(

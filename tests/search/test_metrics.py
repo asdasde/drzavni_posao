@@ -21,10 +21,12 @@ from drzavni_posao.search.retrieval.models import SearchResult
 from .test_engine import make_segment
 
 
-def result(rank: int, segment_id: str, episode_id: str, start: float) -> SearchResult:
+def result(
+    rank: int, segment_id: str, youtube_video_id: str, start: float
+) -> SearchResult:
     return SearchResult(
         rank=rank,
-        segment=make_segment(segment_id, episode_id, "text", start=start),
+        segment=make_segment(segment_id, youtube_video_id, "text", start=start),
         score=1 / rank,
         score_components={},
         matched_characters=[],
@@ -173,7 +175,7 @@ class EvaluationTests(unittest.TestCase):
         ]
         judgments = (
             Judgment(
-                episode_id="e3",
+                youtube_video_id="e3",
                 start_seconds=55,
                 end_seconds=75,
                 time_reference="video",

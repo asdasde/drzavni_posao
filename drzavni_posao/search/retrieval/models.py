@@ -20,7 +20,7 @@ class SearchResult:
     def to_dict(self) -> dict[str, Any]:
         return {
             "rank": self.rank,
-            "episode_id": self.segment.episode_id,
+            "youtube_video_id": self.segment.youtube_video_id,
             "episode_title": self.segment.episode_title,
             "segment_id": self.segment.segment_id,
             "start_seconds": self.segment.start_seconds,
