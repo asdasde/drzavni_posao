@@ -277,6 +277,7 @@ A segment record contains provenance, retrieval fields, and both time bases:
 ```json
 {
   "youtube_video_id": "i3ONQLQQ0Po",
+  "episode_number": 42,
   "episode_title": "Košarka",
   "segment_id": "i3ONQLQQ0Po_0014",
   "start_seconds": 116.3,
@@ -287,7 +288,7 @@ A segment record contains provenance, retrieval fields, and both time bases:
   "text_original": "[Đorđe Čvarkov] ...",
   "text_semantic": "Košarka Đorđe Čvarkov ...",
   "text_normalized": "kosarka cvarkov ...",
-  "speakers": ["Đorđe Čvarkov", "Boškić"],
+  "speaker_keys": ["cvarkov", "boskic"],
   "source_segment_indices": [42, 43, 44]
 }
 ```
