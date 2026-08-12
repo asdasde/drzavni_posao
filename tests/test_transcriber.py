@@ -8,6 +8,7 @@ from drzavni_posao.transcriber import (
     Transcriber,
     TranscriberConfig,
     is_collapsed,
+    split_ellipsis_segments,
 )
 
 
@@ -67,6 +68,13 @@ class TranscriberConfigTrackingTests(unittest.TestCase):
         self.assertEqual(data["retry_collapsed_min_duration"], 6.0)
         self.assertNotIn("retry_collapsed_max_chars_per_sec", data)
 
+    def test_custom_ellipsis_setting_is_tracked(self):
+        data = TranscriberConfig(
+            model_name="large-v3",
+            split_on_ellipsis=True,
+        ).model_dump(exclude_defaults=True)
+        self.assertTrue(data["split_on_ellipsis"])
+
     def test_empty_vad_options_match_absent(self):
         self.assertEqual(
             TranscriberConfig(model_name="large-v3").model_dump(exclude_defaults=True),
@@ -88,6 +96,52 @@ class TranscriberConfigTrackingTests(unittest.TestCase):
             enabled.model_dump(exclude_defaults=True)["vad_repair_min_silence"],
             1.0,
         )
+
+
+class EllipsisSplitTests(unittest.TestCase):
+    def test_splits_multiple_word_gap_ellipses(self):
+        segment = {
+            "start": 0.0,
+            "end": 6.0,
+            "text": "A... B... C",
+            "words": [
+                {"word": "A...", "start": 0.0, "end": 1.0},
+                {"word": "B...", "start": 2.0, "end": 3.0},
+                {"word": "C", "start": 4.0, "end": 5.0},
+            ],
+            "avg_logprob": -0.2,
+        }
+
+        split = split_ellipsis_segments([segment])
+
+        self.assertEqual([item["text"] for item in split], ["A", "B", "C"])
+        self.assertEqual(
+            [(item["start"], item["end"]) for item in split],
+            [(0.0, 1.5), (1.5, 3.5), (3.5, 6.0)],
+        )
+        self.assertEqual(
+            [[word["word"] for word in item["words"]] for item in split],
+            [["A..."], ["B..."], ["C"]],
+        )
+        self.assertTrue(all(item["avg_logprob"] == -0.2 for item in split))
+
+    def test_leading_and_trailing_ellipses_do_not_create_empty_segments(self):
+        segments = [
+            {"start": 0.0, "end": 1.0, "text": "... A", "words": []},
+            {"start": 1.0, "end": 2.0, "text": "B...", "words": []},
+        ]
+
+        self.assertEqual(split_ellipsis_segments(segments), segments)
+
+    def test_does_not_split_word_midpoint_ellipsis(self):
+        segment = {
+            "start": 0.0,
+            "end": 1.0,
+            "text": "A...B",
+            "words": [{"word": "A...B", "start": 0.0, "end": 1.0}],
+        }
+
+        self.assertEqual(split_ellipsis_segments([segment]), [segment])
 
 
 class VadRealignmentTests(unittest.TestCase):

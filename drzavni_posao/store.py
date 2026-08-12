@@ -34,7 +34,7 @@ class MediaStore:
 
     def _build_index(self) -> dict[str, Episode]:
         paths = (
-            sorted(self.audio_dir.glob("*.mp3"))
+            sorted(self.audio_dir.rglob("*.mp3"))
             if self.audio_dir is not None
             else (Path(f"{item.youtube_title}.mp3") for item in self.catalog.episodes)
         )
