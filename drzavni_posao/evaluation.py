@@ -11,6 +11,7 @@ from .metrics import (
     labeled_segments,
 )
 from .tracking import MlflowTracker, Stage
+from .transcript import Transcript
 
 ASSIGNMENT_PREFIX = "assignment"
 
@@ -52,15 +53,17 @@ def run_labeled_segments(
         if not labels:
             continue
 
-        transcript = _cached_json(
-            cache_dir,
-            Path(run_id) / f"{episode_key}.json",
-            lambda: tracker.stage_transcript(
-                state.run_id,
-                Stage.CHARACTER_ASSIGNER,
-            ).to_dict(),
+        transcript = Transcript.from_dict(
+            _cached_json(
+                cache_dir,
+                Path(run_id) / f"{episode_key}.json",
+                lambda: tracker.stage_transcript(
+                    state.run_id,
+                    Stage.CHARACTER_ASSIGNER,
+                ).to_dict(),
+            )
         )
-        segments = labeled_segments(labels, transcript["segments"], trim_start)
+        segments = labeled_segments(labels, transcript.segments, trim_start)
         segments.insert(0, "episode_key", episode_key)
         segments.insert(1, "episode_run_id", state.run_id)
         episodes.append(segments)

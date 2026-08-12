@@ -18,6 +18,8 @@ from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .transcript import Transcript
+
 logger = logging.getLogger(__name__)
 
 EPISODE_KEY = re.compile(r"Ep\.\s*(\d+)")
@@ -56,7 +58,7 @@ CAST = {
 _GAP_TOLERANCE = 0.05  # seconds of slack when testing word-in-gap containment
 
 
-def scribe_to_transcript(export: dict) -> dict:
+def scribe_to_transcript(export: dict) -> Transcript:
     """Re-shape a Scribe export into the pipeline's own transcript format.
 
     Scribe emits one flat list of ``word`` and ``spacing`` entries; the pipeline
@@ -89,14 +91,10 @@ def scribe_to_transcript(export: dict) -> dict:
         segment["end"] = segment["words"][-1]["end"]
         segment["text"] = " ".join(word["word"] for word in segment["words"])
 
-    return {
-        "file": None,
-        "text": "\n".join(f"[{s['speaker']}] {s['text']}" for s in segments),
-        "segments": segments,
-    }
+    return Transcript(segments)
 
 
-def scribe_transcripts(directory: Path) -> dict[str, dict]:
+def scribe_transcripts(directory: Path) -> dict[str, Transcript]:
     """Episode key → Scribe export, converted to the pipeline transcript format."""
     found = {}
     for path in sorted(directory.glob("*.json")):
@@ -110,17 +108,20 @@ def scribe_transcripts(directory: Path) -> dict[str, dict]:
     return found
 
 
-def load_transcripts(directory: Path) -> dict[str, dict]:
+def load_transcripts(directory: Path) -> dict[str, Transcript]:
     """Episode key → transcript for every ``<key>.json`` MediaStore wrote."""
     paths = sorted(directory.glob("*.json"))
     logger.info("Loaded %d transcripts from %s", len(paths), directory)
-    return {path.stem: json.loads(path.read_text(encoding="utf-8")) for path in paths}
+    return {
+        path.stem: Transcript.from_dict(json.loads(path.read_text(encoding="utf-8")))
+        for path in paths
+    }
 
 
-def words(transcript: dict) -> list[dict]:
+def words(transcript: Transcript) -> list[dict]:
     """Every word of a transcript, in order, whichever system produced it."""
     return [
-        word for segment in transcript["segments"] for word in segment.get("words", [])
+        word for segment in transcript.segments for word in segment.get("words", [])
     ]
 
 
@@ -238,7 +239,7 @@ class Comparison:
         }
 
 
-def compare(key: str, reference: dict, hypothesis: dict) -> Comparison:
+def compare(key: str, reference: Transcript, hypothesis: Transcript) -> Comparison:
     """Align two transcripts of one episode, in either direction.
 
     Both sides are plain transcripts now, so this also compares two pipeline
@@ -274,8 +275,8 @@ def compare(key: str, reference: dict, hypothesis: dict) -> Comparison:
         key=key,
         reference=reference_words,
         hypothesis=hypothesis_words,
-        reference_segments=reference["segments"],
-        hypothesis_segments=hypothesis["segments"],
+        reference_segments=reference.segments,
+        hypothesis_segments=hypothesis.segments,
         matched=matched,
         counts=dict(counts),
     )
@@ -287,8 +288,8 @@ def _episode_order(key: str) -> tuple[bool, int | str]:
 
 
 def compare_all(
-    transcripts: dict[str, dict],
-    references: dict[str, dict],
+    transcripts: dict[str, Transcript],
+    references: dict[str, Transcript],
 ) -> list[Comparison]:
     """Compare every episode present in both *transcripts* and *references*."""
     shared = sorted(set(transcripts) & set(references), key=_episode_order)
