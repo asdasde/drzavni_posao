@@ -10,9 +10,7 @@ from drzavni_posao.search.evaluation.runner import (
     Judgment,
     build_argument_parser,
     build_evaluation_manifest,
-    build_evaluation_provenance,
     calculate_query_metrics,
-    evaluation_query_fingerprint,
     relevance_grades,
 )
 from drzavni_posao.search.retrieval.fusion import HybridWeights
@@ -41,53 +39,6 @@ class EvaluationTests(unittest.TestCase):
         self.assertEqual(args.methods, "bm25")
         self.assertIsNone(args.vectors)
         self.assertEqual(args.queries, Path("data/evaluation_queries.jsonl"))
-
-    def test_evaluation_provenance_binds_queries_and_files(self) -> None:
-        query = EvaluationQuery(
-            query_id="q1",
-            query="scene query",
-            judgments=(Judgment("e1", 25, 45),),
-            split="test",
-        )
-        changed = EvaluationQuery(
-            query_id="q1",
-            query="changed scene query",
-            judgments=query.judgments,
-            split="test",
-        )
-        self.assertNotEqual(
-            evaluation_query_fingerprint([query]),
-            evaluation_query_fingerprint([changed]),
-        )
-        with tempfile.TemporaryDirectory() as temporary:
-            query_path = Path(temporary) / "queries.jsonl"
-            query_path.write_text('{"query_id":"q1"}\n', encoding="utf-8")
-            provenance = build_evaluation_provenance(
-                query_files=[query_path],
-                queries=[query],
-                segments=[make_segment("s1", "e1", "text")],
-                vector_model_name="dense-model",
-                vector_model_revision="dense-commit",
-                reranker_model_name="reranker-model",
-                reranker_model_revision="reranker-commit",
-            )
-        self.assertEqual(provenance["status"], "current")
-        self.assertTrue(provenance["usable_for_current_benchmark"])
-        self.assertEqual(provenance["query_count"], 1)
-        self.assertEqual(
-            provenance["query_file_fingerprints"],
-            [
-                {
-                    "path": str(query_path),
-                    "sha256": (
-                        "f2c527db2ab8602e4a44ea2e24db69d9b1848236868c9039a7207850d1166e37"
-                    ),
-                }
-            ],
-        )
-        self.assertEqual(provenance["vector_model_revision"], "dense-commit")
-        self.assertEqual(provenance["reranker_model_name"], "reranker-model")
-        self.assertEqual(provenance["reranker_model_revision"], "reranker-commit")
 
     def test_evaluation_manifest_captures_configuration_and_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -153,6 +104,8 @@ class EvaluationTests(unittest.TestCase):
         self.assertEqual(manifest["evaluation"]["top_k"], 10)
         self.assertEqual(manifest["evaluation"]["rerank_k"], 50)
         self.assertEqual(manifest["data"]["query_count"], 1)
+        self.assertEqual(len(manifest["data"]["query_set_fingerprint"]), 64)
+        self.assertEqual(len(manifest["data"]["corpus_fingerprint"]), 64)
         self.assertEqual(
             manifest["data"]["semantic_corpus_fingerprint"],
             "semantic-fingerprint",
@@ -163,6 +116,10 @@ class EvaluationTests(unittest.TestCase):
         )
         self.assertEqual(
             manifest["artifacts"]["vector_index"]["vectors"]["size_bytes"], 4
+        )
+        self.assertEqual(
+            manifest["artifacts"]["queries"][0]["sha256"],
+            "f2c527db2ab8602e4a44ea2e24db69d9b1848236868c9039a7207850d1166e37",
         )
         self.assertEqual(len(manifest["artifacts"]["segments"]["sha256"]), 64)
         self.assertIn("commit", manifest["software"]["git"])

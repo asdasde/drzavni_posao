@@ -118,44 +118,6 @@ def evaluation_query_fingerprint(queries: list[EvaluationQuery]) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
-def build_evaluation_provenance(
-    *,
-    query_files: list[Path],
-    queries: list[EvaluationQuery],
-    segments: list[SegmentRecord],
-    semantic_fingerprint: str | None = None,
-    vector_model_name: str | None = None,
-    vector_model_revision: str | None = None,
-    reranker_model_name: str | None = None,
-    reranker_model_revision: str | None = None,
-) -> dict[str, Any]:
-    provenance: dict[str, Any] = {
-        "status": "current",
-        "usable_for_current_benchmark": True,
-        "query_count": len(queries),
-        "query_set_fingerprint": evaluation_query_fingerprint(queries),
-        "query_file_fingerprints": [
-            {
-                "path": str(path),
-                "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
-            }
-            for path in query_files
-        ],
-        "corpus_fingerprint": segment_corpus_fingerprint(segments),
-    }
-    if semantic_fingerprint is not None:
-        provenance["semantic_corpus_fingerprint"] = semantic_fingerprint
-    if vector_model_name is not None:
-        provenance["vector_model_name"] = vector_model_name
-    if vector_model_revision is not None:
-        provenance["vector_model_revision"] = vector_model_revision
-    if reranker_model_name is not None:
-        provenance["reranker_model_name"] = reranker_model_name
-    if reranker_model_revision is not None:
-        provenance["reranker_model_revision"] = reranker_model_revision
-    return provenance
-
-
 def _file_manifest(path: Path) -> dict[str, Any]:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -735,34 +697,6 @@ def main() -> None:
                 bootstrap_samples=args.bootstrap_samples,
                 warmup=args.warmup,
                 weights=weights,
-            ),
-            "provenance": build_evaluation_provenance(
-                query_files=query_files,
-                queries=queries,
-                segments=engine.segments,
-                semantic_fingerprint=(
-                    engine.vector_index.semantic_corpus_fingerprint
-                    if engine.vector_index is not None
-                    else None
-                ),
-                vector_model_name=(
-                    engine.vector_index.model_name
-                    if engine.vector_index is not None
-                    else None
-                ),
-                vector_model_revision=(
-                    engine.vector_index.model_revision
-                    if engine.vector_index is not None
-                    else None
-                ),
-                reranker_model_name=(
-                    engine.reranker.name if engine.reranker is not None else None
-                ),
-                reranker_model_revision=(
-                    getattr(engine.reranker, "revision", None)
-                    if engine.reranker is not None
-                    else None
-                ),
             ),
             "results": [summary.to_dict() for summary in summaries],
         },
