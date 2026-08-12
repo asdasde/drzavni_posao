@@ -171,6 +171,7 @@ def build_records(
             searchable_segments.append(
                 SegmentRecord(
                     youtube_video_id=video_id,
+                    episode_number=episode_meta.episode_number,
                     episode_title=episode_meta.title,
                     segment_id=f"{video_id}_{chunk_number:04d}",
                     start_seconds=start,

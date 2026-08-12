@@ -17,6 +17,7 @@ class SegmentRecord(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
     youtube_video_id: str
+    episode_number: int | None
     episode_title: str
     segment_id: str
     start_seconds: float
@@ -51,3 +52,9 @@ class SegmentRecord(BaseModel):
     @property
     def speakers(self) -> list[str]:
         return [CHARACTER_DISPLAY_NAMES.get(key, key) for key in self.speaker_keys]
+
+    @property
+    def episode_label(self) -> str:
+        if self.episode_number is None:
+            return self.episode_title
+        return f"Ep. {self.episode_number} — {self.episode_title}"

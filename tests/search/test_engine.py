@@ -70,11 +70,13 @@ def make_segment(
     semantic: str | None = None,
     speaker_keys: list[str] | None = None,
     start: float = 0.0,
+    episode_number: int | None = 1,
 ) -> SegmentRecord:
     end = start + 20
     keys = speaker_keys or []
     return SegmentRecord(
         youtube_video_id=youtube_video_id,
+        episode_number=episode_number,
         episode_title=f"Title {youtube_video_id}",
         segment_id=segment_id,
         start_seconds=start,
@@ -93,6 +95,7 @@ class RetrievalTests(unittest.TestCase):
     def test_segment_record_derives_display_fields(self) -> None:
         segment = SegmentRecord(
             youtube_video_id="e1",
+            episode_number=42,
             episode_title="Title",
             segment_id="s1",
             start_seconds=1,
@@ -109,6 +112,11 @@ class RetrievalTests(unittest.TestCase):
         self.assertEqual(segment.start_time, "00:00:01")
         self.assertEqual(segment.video_end_time, "00:00:46")
         self.assertEqual(segment.speakers, ["Boškić"])
+        self.assertEqual(segment.episode_label, "Ep. 42 — Title")
+        self.assertEqual(
+            segment.model_copy(update={"episode_number": None}).episode_label,
+            "Title",
+        )
         self.assertNotIn("start_time", segment.model_dump())
         self.assertNotIn("speakers", segment.model_dump())
 
@@ -220,7 +228,7 @@ class RetrievalTests(unittest.TestCase):
 
         self.assertEqual(
             captured.records[0].getMessage(),
-            "1. Title e1 [e1]\n"
+            "1. Ep. 1 — Title e1\n"
             "   Time: 00:00:25–00:00:45\n"
             "   Characters: unknown\n"
             "   Relative score: 0.750\n"

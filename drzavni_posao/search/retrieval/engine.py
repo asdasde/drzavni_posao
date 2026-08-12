@@ -362,7 +362,7 @@ def _log_results(results: list[SearchResult]) -> None:
     for result in results:
         segment = result.segment
         lines = [
-            f"{result.rank}. {segment.episode_title} [{segment.youtube_video_id}]",
+            f"{result.rank}. {segment.episode_label}",
             f"   Time: {segment.video_start_time}–{segment.video_end_time}",
             f"   Characters: {', '.join(segment.speakers) or 'unknown'}",
             f"   Relative score: {result.score:.3f}",
