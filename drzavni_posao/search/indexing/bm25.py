@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import math
 from collections import Counter
 from dataclasses import dataclass
@@ -13,6 +14,8 @@ from ..common.io import load_segments, write_json
 from ..common.models import SegmentRecord
 from ..text import tokenize
 
+
+logger = logging.getLogger(__name__)
 
 INDEX_VERSION = 1
 
@@ -181,6 +184,7 @@ class BM25Index:
 
 
 def main() -> None:
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     parser = argparse.ArgumentParser(description="Build the local Okapi BM25 index")
     parser.add_argument("--segments", type=Path, default=Path("data/segments.jsonl"))
     parser.add_argument(
@@ -192,9 +196,11 @@ def main() -> None:
     segments = load_segments(args.segments)
     index = BM25Index.build(segments, k1=args.k1, b=args.b)
     index.save(args.output)
-    print(
-        f"Wrote BM25 index for {len(segments)} segments and "
-        f"{len(index.document_frequencies)} terms to {args.output}"
+    logger.info(
+        "Wrote BM25 index for %d segments and %d terms to %s",
+        len(segments),
+        len(index.document_frequencies),
+        args.output,
     )
 
 

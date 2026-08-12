@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import logging
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -20,6 +21,8 @@ from ..common.io import load_segments, write_json
 from ..common.models import SegmentRecord
 from ..text import normalize_text
 
+
+logger = logging.getLogger(__name__)
 
 VECTOR_INDEX_VERSION = 1
 # Version 2 predates the version reset and uses the same binary schema.
@@ -40,9 +43,9 @@ class TextEncoder(Protocol):
     def encode_query(self, text: str) -> Float32Array: ...
 
 
-def model_revision_from_path(path: str | Path) -> str | None:
+def model_revision_from_path(path: Path) -> str | None:
     """Return the commit hash from a Hugging Face snapshot path, when present."""
-    parts = Path(path).parts
+    parts = path.parts
     for index, part in enumerate(parts[:-1]):
         if part == "snapshots":
             return parts[index + 1]
@@ -54,7 +57,7 @@ def resolve_model_path(
     *,
     local_files_only: bool,
     revision: str | None = None,
-) -> str:
+) -> Path:
     """Resolve a Hub ID to a snapshot directory before model construction.
 
     Some transformer submodules do not consistently propagate
@@ -63,7 +66,7 @@ def resolve_model_path(
     """
     local_path = Path(model_name).expanduser()
     if local_path.exists():
-        return str(local_path.resolve())
+        return local_path.resolve()
     try:
         from huggingface_hub import snapshot_download
     except ImportError as error:
@@ -72,10 +75,12 @@ def resolve_model_path(
             "'search' optional dependencies)."
         ) from error
     try:
-        return snapshot_download(
-            repo_id=model_name,
-            local_files_only=local_files_only,
-            revision=revision,
+        return Path(
+            snapshot_download(
+                repo_id=model_name,
+                local_files_only=local_files_only,
+                revision=revision,
+            )
         )
     except Exception as error:
         mode = "local cache" if local_files_only else "Hugging Face Hub"
@@ -132,7 +137,7 @@ class SentenceTransformerTextEncoder:
         self.revision = model_revision_from_path(resolved_model_path)
         try:
             self.model = SentenceTransformer(
-                resolved_model_path,
+                str(resolved_model_path),
                 device=self.device,
                 local_files_only=True,
             )
@@ -399,6 +404,7 @@ def encoder_for_index(
 
 
 def main() -> None:
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     parser = argparse.ArgumentParser(
         description="Build an exact cosine index for multilingual text embeddings"
     )
@@ -442,9 +448,12 @@ def main() -> None:
     index = VectorIndex.build(segments, encoder)
     index.save(args.output)
     metadata_path, _ = index.artifact_paths(args.output)
-    print(
-        f"Wrote {len(index.segment_ids)} x {index.dimension} vector index "
-        f"({index.model_name}) to {metadata_path}"
+    logger.info(
+        "Wrote %d x %d vector index (%s) to %s",
+        len(index.segment_ids),
+        index.dimension,
+        index.model_name,
+        metadata_path,
     )
 
 

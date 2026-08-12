@@ -1,4 +1,6 @@
 from dataclasses import replace
+from contextlib import redirect_stdout
+from io import StringIO
 import json
 import tempfile
 from types import SimpleNamespace
@@ -8,6 +10,7 @@ from pathlib import Path
 
 import numpy as np
 
+from drzavni_posao.search.retrieval import engine as engine_module
 from drzavni_posao.search.common.models import SegmentRecord, format_timestamp
 from drzavni_posao.search.indexing.bm25 import BM25Hit, BM25Index
 from drzavni_posao.search.indexing.vector import (
@@ -16,6 +19,7 @@ from drzavni_posao.search.indexing.vector import (
     VectorIndex,
     encoder_for_index,
     normalize_vector,
+    resolve_model_path,
 )
 from drzavni_posao.search.retrieval.engine import (
     SearchEngine,
@@ -61,7 +65,7 @@ class StubCrossEncoder:
 
 def make_segment(
     segment_id: str,
-    episode_id: str,
+    youtube_video_id: str,
     text: str,
     *,
     semantic: str | None = None,
@@ -71,8 +75,8 @@ def make_segment(
     end = start + 20
     keys = speaker_keys or []
     return SegmentRecord(
-        episode_id=episode_id,
-        episode_title=f"Title {episode_id}",
+        youtube_video_id=youtube_video_id,
+        episode_title=f"Title {youtube_video_id}",
         segment_id=segment_id,
         start_seconds=start,
         end_seconds=end,
@@ -92,6 +96,15 @@ def make_segment(
 
 
 class RetrievalTests(unittest.TestCase):
+    def test_resolve_model_path_returns_path_for_local_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary)
+
+            resolved = resolve_model_path(path.as_posix(), local_files_only=True)
+
+            self.assertEqual(resolved, path.resolve())
+            self.assertIsInstance(resolved, Path)
+
     def setUp(self) -> None:
         self.segments = [
             make_segment(
@@ -173,6 +186,63 @@ class RetrievalTests(unittest.TestCase):
         self.assertEqual(args.segments, Path("custom/segments.jsonl"))
         self.assertEqual(args.bm25, Path("custom/bm25.json"))
         self.assertEqual(args.vectors, Path("custom/vectors"))
+
+    def test_human_readable_results_are_logged_as_one_multiline_message(self) -> None:
+        result = engine_module.SearchResult(
+            rank=1,
+            segment=make_segment("s1", "e1", "first line\nsecond line"),
+            score=0.75,
+            score_components={},
+            matched_characters=[],
+            matched_terms=[],
+            reason="test reason",
+            youtube_url_with_timestamp="https://youtu.be/e1?t=25s",
+        )
+
+        with self.assertLogs(engine_module.logger, level="INFO") as captured:
+            engine_module._log_results([result])
+
+        self.assertEqual(
+            captured.records[0].getMessage(),
+            "1. Title e1 [e1]\n"
+            "   Time: 00:00:25–00:00:45\n"
+            "   Characters: unknown\n"
+            "   Relative score: 0.750\n"
+            "   Reason: test reason\n"
+            "   YouTube: https://youtu.be/e1?t=25s\n"
+            "   Transcript:\n"
+            "     first line\n"
+            "     second line\n",
+        )
+        self.assertEqual(len(captured.records), 1)
+
+    def test_json_cli_output_remains_a_bare_json_payload(self) -> None:
+        result = engine_module.SearchResult(
+            rank=1,
+            segment=make_segment("s1", "e1", "text"),
+            score=0.75,
+            score_components={},
+            matched_characters=[],
+            matched_terms=[],
+            reason="test reason",
+        )
+        fake_engine = SimpleNamespace(search=lambda *_args, **_kwargs: [result])
+        stdout = StringIO()
+
+        with (
+            patch.object(
+                engine_module.SearchEngine, "from_paths", return_value=fake_engine
+            ),
+            patch.object(engine_module.logging, "basicConfig") as configure_logging,
+            patch.object(engine_module.logger, "info") as log_info,
+            patch("sys.argv", ["dp-search", "Boškić", "--json"]),
+            redirect_stdout(stdout),
+        ):
+            engine_module.main()
+
+        self.assertEqual(json.loads(stdout.getvalue()), [result.to_dict()])
+        configure_logging.assert_not_called()
+        log_info.assert_not_called()
 
     def test_dense_cross_wording_match(self) -> None:
         results = self.engine.search(

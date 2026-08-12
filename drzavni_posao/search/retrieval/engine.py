@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
+import sys
 from pathlib import Path
 from typing import Literal
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
@@ -18,6 +20,8 @@ from .fusion import HybridWeights, normalize_branch_scores
 from .models import SearchResult
 from .rerank import CrossEncoderReranker, DEFAULT_RERANKER_MODEL, Reranker
 
+
+logger = logging.getLogger(__name__)
 
 SearchMethod = Literal["bm25", "dense", "hybrid", "cross_encoder", "hybrid_rerank"]
 RERANK_BASE_WEIGHT = 0.30
@@ -288,10 +292,10 @@ class SearchEngine:
         selected_segments: list[SegmentRecord] = []
         for segment_id in ranked_ids:
             segment = self.by_id[segment_id]
-            if group_by_episode and segment.episode_id in used_episodes:
+            if group_by_episode and segment.youtube_video_id in used_episodes:
                 continue
             if deduplicate_overlaps and any(
-                existing.episode_id == segment.episode_id
+                existing.youtube_video_id == segment.youtube_video_id
                 and _temporal_overlap_ratio(existing, segment)
                 >= OVERLAP_DEDUPLICATION_THRESHOLD
                 for existing in selected_segments
@@ -299,7 +303,7 @@ class SearchEngine:
                 continue
             selected_ids.append(segment_id)
             selected_segments.append(segment)
-            used_episodes.add(segment.episode_id)
+            used_episodes.add(segment.youtube_video_id)
             if len(selected_ids) >= top_k:
                 break
 
@@ -351,25 +355,24 @@ class SearchEngine:
         return results
 
 
-def _print_results(results: list[SearchResult]) -> None:
+def _log_results(results: list[SearchResult]) -> None:
     if not results:
-        print("No results.")
+        logger.info("No results.")
         return
     for result in results:
         segment = result.segment
-        print(
-            f"{result.rank}. {segment.episode_id} — {segment.episode_title}\n"
-            f"   Time: {segment.video_start_time}–{segment.video_end_time}\n"
-            f"   Characters: {', '.join(segment.speakers) or 'unknown'}\n"
-            f"   Relative score: {result.score:.3f}\n"
-            f"   Reason: {result.reason}"
-        )
+        lines = [
+            f"{result.rank}. {segment.episode_title} [{segment.youtube_video_id}]",
+            f"   Time: {segment.video_start_time}–{segment.video_end_time}",
+            f"   Characters: {', '.join(segment.speakers) or 'unknown'}",
+            f"   Relative score: {result.score:.3f}",
+            f"   Reason: {result.reason}",
+        ]
         if result.youtube_url_with_timestamp:
-            print(f"   YouTube: {result.youtube_url_with_timestamp}")
-        print("   Transcript:")
-        for line in segment.text_original.splitlines():
-            print(f"     {line}")
-        print()
+            lines.append(f"   YouTube: {result.youtube_url_with_timestamp}")
+        lines.append("   Transcript:")
+        lines.extend(f"     {line}" for line in segment.text_original.splitlines())
+        logger.info("%s\n", "\n".join(lines))
 
 
 def build_argument_parser() -> argparse.ArgumentParser:
@@ -405,6 +408,8 @@ def build_argument_parser() -> argparse.ArgumentParser:
 
 def main() -> None:
     args = build_argument_parser().parse_args()
+    if not args.json_output:
+        logging.basicConfig(level=logging.INFO, format="%(message)s")
     device = resolve_torch_device(args.device)
 
     reranker = None
@@ -431,13 +436,15 @@ def main() -> None:
         group_by_episode=not args.all_segments,
     )
     if args.json_output:
-        print(
-            json.dumps(
-                [result.to_dict() for result in results], ensure_ascii=False, indent=2
-            )
+        json.dump(
+            [result.to_dict() for result in results],
+            sys.stdout,
+            ensure_ascii=False,
+            indent=2,
         )
+        sys.stdout.write("\n")
     else:
-        _print_results(results)
+        _log_results(results)
 
 
 if __name__ == "__main__":

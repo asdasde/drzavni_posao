@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import logging
 import math
 import platform
 import random
@@ -31,6 +32,8 @@ from ..retrieval.fusion import HybridWeights
 from ..retrieval.models import SearchResult
 from ..retrieval.rerank import CrossEncoderReranker, DEFAULT_RERANKER_MODEL
 
+
+logger = logging.getLogger(__name__)
 
 TimeReference = Literal["transcript", "video"]
 EVALUATION_TOP_K = 10
@@ -63,7 +66,7 @@ def parse_timestamp(value: str | int | float | None) -> float | None:
 
 @dataclass(frozen=True, slots=True)
 class Judgment:
-    episode_id: str
+    youtube_video_id: str
     start_seconds: float | None = None
     end_seconds: float | None = None
     grade: int = 1
@@ -317,8 +320,8 @@ def build_evaluation_manifest(
 
 
 def _parse_judgment(value: dict[str, Any], default_reference: str) -> Judgment:
-    if "episode_id" not in value:
-        raise ValueError("Every relevance judgment needs episode_id")
+    if "youtube_video_id" not in value:
+        raise ValueError("Every relevance judgment needs youtube_video_id")
     grade = int(value.get("grade", value.get("relevance", 1)))
     if grade <= 0:
         raise ValueError("Relevance grades must be positive integers")
@@ -338,7 +341,7 @@ def _parse_judgment(value: dict[str, Any], default_reference: str) -> Judgment:
             "episode-only labels are too coarse"
         )
     return Judgment(
-        episode_id=str(value["episode_id"]),
+        youtube_video_id=str(value["youtube_video_id"]),
         start_seconds=start,
         end_seconds=end,
         grade=grade,
@@ -360,10 +363,10 @@ def load_evaluation_queries(path: Path) -> list[EvaluationQuery]:
             raise ValueError(f"Evaluation query {query_id} is empty")
         default_reference = str(row.get("time_reference", "video"))
         raw_judgments = row.get("judgments", row.get("relevant"))
-        if raw_judgments is None and row.get("relevant_episode"):
+        if raw_judgments is None and row.get("relevant_youtube_video_id"):
             raw_judgments = [
                 {
-                    "episode_id": row["relevant_episode"],
+                    "youtube_video_id": row["relevant_youtube_video_id"],
                     "start_time": row.get("relevant_segment_start"),
                     "end_time": row.get("relevant_segment_end"),
                     "time_reference": default_reference,
@@ -407,7 +410,7 @@ def load_evaluation_query_files(paths: list[Path]) -> list[EvaluationQuery]:
 def judgment_matches_segment(
     judgment: Judgment, segment: SegmentRecord, *, tolerance_seconds: float = 2.0
 ) -> bool:
-    if judgment.episode_id != segment.episode_id:
+    if judgment.youtube_video_id != segment.youtube_video_id:
         return False
     if judgment.segment_id is not None:
         return judgment.segment_id == segment.segment_id
@@ -580,17 +583,18 @@ def evaluate_method(
     )
 
 
-def _print_table(summaries: list[EvaluationSummary]) -> None:
-    print("Method                 Recall@5   MRR@10   nDCG@10   Mean ms   P95 ms")
-    for summary in summaries:
-        print(
-            f"{summary.method:<22} "
-            f"{summary.recall_at_5:>8.3f} "
-            f"{summary.mrr_at_10:>8.3f} "
-            f"{summary.ndcg_at_10:>9.3f} "
-            f"{summary.mean_latency_ms:>9.1f} "
-            f"{summary.p95_latency_ms:>8.1f}"
-        )
+def _log_table(summaries: list[EvaluationSummary]) -> None:
+    lines = ["Method                 Recall@5   MRR@10   nDCG@10   Mean ms   P95 ms"]
+    lines.extend(
+        f"{summary.method:<22} "
+        f"{summary.recall_at_5:>8.3f} "
+        f"{summary.mrr_at_10:>8.3f} "
+        f"{summary.ndcg_at_10:>9.3f} "
+        f"{summary.mean_latency_ms:>9.1f} "
+        f"{summary.p95_latency_ms:>8.1f}"
+        for summary in summaries
+    )
+    logger.info("%s", "\n".join(lines))
 
 
 def build_argument_parser() -> argparse.ArgumentParser:
@@ -643,6 +647,7 @@ def build_argument_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     args = build_argument_parser().parse_args()
 
     methods = [item.strip() for item in args.methods.split(",") if item.strip()]
@@ -704,7 +709,7 @@ def main() -> None:
         )
         for method in methods
     ]
-    _print_table(summaries)
+    _log_table(summaries)
     write_json(
         args.output,
         {
@@ -762,7 +767,7 @@ def main() -> None:
             "results": [summary.to_dict() for summary in summaries],
         },
     )
-    print(f"\nWrote actual per-query results to {args.output}")
+    logger.info("\nWrote actual per-query results to %s", args.output)
 
 
 if __name__ == "__main__":
