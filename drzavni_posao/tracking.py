@@ -79,12 +79,14 @@ class MlflowTracker:
 
     def _configuration(self, run_id: str) -> dict[str, Any]:
         with TemporaryDirectory() as directory:
-            path = self.client.download_artifacts(
-                run_id,
-                "config.json",
-                directory,
+            path = Path(
+                self.client.download_artifacts(
+                    run_id,
+                    "config.json",
+                    directory,
+                )
             )
-            return json.loads(Path(path).read_text(encoding="utf-8"))
+            return json.loads(path.read_text(encoding="utf-8"))
 
     def _get_or_create_run(self, name: str, config: Any) -> str:
         configuration = config.to_dict()
@@ -294,12 +296,14 @@ class MlflowTracker:
 
     def stage_transcript(self, run_id: str, stage: Stage) -> Transcript:
         with TemporaryDirectory() as directory:
-            path = self.client.download_artifacts(
-                run_id,
-                f"{stage}/transcript.json",
-                directory,
+            path = Path(
+                self.client.download_artifacts(
+                    run_id,
+                    f"{stage}/transcript.json",
+                    directory,
+                )
             )
-            data = json.loads(Path(path).read_text(encoding="utf-8"))
+            data = json.loads(path.read_text(encoding="utf-8"))
             return Transcript.from_dict(data)
 
     def restore_stage(
@@ -397,12 +401,14 @@ class MlflowTracker:
             if key.startswith(f"{stage}.")
         }
         with TemporaryDirectory() as directory:
-            stage_directory = self.client.download_artifacts(
-                source_episode_run_id,
-                stage,
-                directory,
+            stage_directory = Path(
+                self.client.download_artifacts(
+                    source_episode_run_id,
+                    stage,
+                    directory,
+                )
             )
-            mlflow.log_artifacts(stage_directory, artifact_path=stage)
+            mlflow.log_artifacts(str(stage_directory), artifact_path=stage)
         mlflow.log_metrics(metrics)
         mlflow.set_tag(
             f"source.{stage}.run_id",

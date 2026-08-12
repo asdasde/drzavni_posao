@@ -12,6 +12,7 @@ from typing import Any
 _EXPORT_MODULES = {
     "SR": "constants",
     "Episode": "episode",
+    "EpisodeMetadata": "episode",
     "Transcript": "transcript",
     "MediaStore": "store",
     "Transcriber": "transcriber",
@@ -33,6 +34,7 @@ _EXPORT_MODULES = {
 __all__ = [
     "SR",
     "Episode",
+    "EpisodeMetadata",
     "Transcript",
     "MediaStore",
     "Transcriber",
