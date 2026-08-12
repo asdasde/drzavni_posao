@@ -191,7 +191,7 @@ def run_pipeline(
                                 metrics_for(stage, episode),
                             )
 
-                        media.save(episode, subdir=run_name)
+                        media.save(episode, subdir=Path(run_name))
                 except Exception:
                     logger.exception(
                         "Episode %s failed; continuing",

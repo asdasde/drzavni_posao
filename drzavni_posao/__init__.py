@@ -1,19 +1,40 @@
-from .character_assigner import CharacterAssigner, CharacterAssignerConfig
-from .constants import SR
-from .diarizer import Diarizer, DiarizerConfig
-from .embedder import Embedder, EmbedderConfig
-from .episode import Episode
-from .evaluation import evaluate_run
-from .gallery import Gallery
-from .pipeline import PipelineConfig, run_pipeline
-from .store import MediaStore
-from .tracking import MlflowTracker, Stage
-from .transcriber import Transcriber, TranscriberConfig
-from .transcript import Transcript
+"""Public package API.
+
+Exports are loaded lazily so importing a lightweight subpackage, such as
+``drzavni_posao.search``, does not initialize the audio transcription stack.
+"""
+
+from __future__ import annotations
+
+from importlib import import_module
+from typing import Any
+
+_EXPORT_MODULES = {
+    "SR": "constants",
+    "Episode": "episode",
+    "EpisodeMetadata": "episode",
+    "Transcript": "transcript",
+    "MediaStore": "store",
+    "Transcriber": "transcriber",
+    "TranscriberConfig": "transcriber",
+    "Diarizer": "diarizer",
+    "DiarizerConfig": "diarizer",
+    "Embedder": "embedder",
+    "EmbedderConfig": "embedder",
+    "Gallery": "gallery",
+    "PipelineConfig": "pipeline",
+    "run_pipeline": "pipeline",
+    "CharacterAssigner": "character_assigner",
+    "CharacterAssignerConfig": "character_assigner",
+    "MlflowTracker": "tracking",
+    "Stage": "tracking",
+    "evaluate_run": "evaluation",
+}
 
 __all__ = [
     "SR",
     "Episode",
+    "EpisodeMetadata",
     "Transcript",
     "MediaStore",
     "Transcriber",
@@ -31,3 +52,12 @@ __all__ = [
     "Stage",
     "evaluate_run",
 ]
+
+
+def __getattr__(name: str) -> Any:
+    module_name = _EXPORT_MODULES.get(name)
+    if module_name is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    value = getattr(import_module(f".{module_name}", __name__), name)
+    globals()[name] = value
+    return value

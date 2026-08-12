@@ -1,5 +1,6 @@
 import gc
 import logging
+import re
 from copy import deepcopy
 
 import numpy as np
@@ -7,7 +8,7 @@ import torch
 import whisperx
 from pydantic import BaseModel, ConfigDict, Field
 
-from .constants import CYRILLIC_TO_LATIN, SR
+from .constants import SR, transliterate_serbian
 from .episode import Episode
 from .transcript import Transcript
 from .vad_realigner import VadRealigner, capture_vad_segments
@@ -15,6 +16,7 @@ from .vad_realigner import VadRealigner, capture_vad_segments
 logger = logging.getLogger(__name__)
 
 DEFAULT_SERBIAN_ALIGN_MODEL = "classla/wav2vec2-xls-r-parlaspeech-hr"
+ELLIPSIS_RE = re.compile(r"\.{3,}")
 
 
 class TranscriberConfig(BaseModel):
@@ -37,6 +39,7 @@ class TranscriberConfig(BaseModel):
     retry_chunk_size: int = 10
     vad_repair_min_silence: float | None = Field(default=None, gt=0)
     vad_repair_padding: float = Field(default=0.1, ge=0)
+    split_on_ellipsis: bool = False
 
 
 def is_collapsed(
@@ -50,6 +53,78 @@ def is_collapsed(
         return False
     text = segment.get("text", "").strip()
     return (len(text) / duration) < max_chars_per_sec
+
+
+def split_ellipsis_segments(segments: list[dict]) -> list[dict]:
+    """Split aligned segments where an ellipsis ends one timed word."""
+    result = []
+    for segment in segments:
+        text = segment.get("text", "")
+        words = segment.get("words", [])
+        matches = list(ELLIPSIS_RE.finditer(text))
+        word_matches = [
+            (index, match)
+            for index, word in enumerate(words)
+            for match in ELLIPSIS_RE.finditer(word.get("word", "").strip())
+        ]
+        fragments = []
+        text_start = word_start = 0
+        start = segment["start"]
+        for index, (match, (word_index, word_match)) in enumerate(
+            zip(matches, word_matches)
+        ):
+            left = text[matches[index - 1].end() if index else 0 : match.start()]
+            right = text[
+                match.end() : matches[index + 1].start()
+                if index + 1 < len(matches)
+                else len(text)
+            ]
+            word = words[word_index]
+            next_word = words[word_index + 1] if word_index + 1 < len(words) else None
+            if (
+                not left.strip(" .")
+                or not right.strip(" .")
+                or word_match.end() != len(word.get("word", "").strip())
+                or word.get("end") is None
+                or next_word is None
+                or next_word.get("start") is None
+            ):
+                continue
+            split_at = (word["end"] + next_word["start"]) / 2
+            if not start < split_at < segment["end"]:
+                continue
+
+            fragment = deepcopy(segment)
+            fragment.update(
+                text=text[text_start : match.start()].strip(),
+                start=start,
+                end=split_at,
+            )
+            fragment["words"] = [
+                word
+                for word in fragment.get("words", [])[word_start : word_index + 1]
+                if word.get("word", "").strip(" .")
+            ]
+            fragments.append(fragment)
+            text_start = match.end()
+            word_start = word_index + 1
+            start = split_at
+
+        if fragments:
+            fragment = deepcopy(segment)
+            fragment.update(
+                text=text[text_start:].strip(),
+                start=start,
+                end=segment["end"],
+            )
+            fragment["words"] = [
+                word
+                for word in fragment.get("words", [])[word_start:]
+                if word.get("word", "").strip(" .")
+            ]
+            fragments.append(fragment)
+        result.extend(fragments if len(fragments) > 1 else [segment])
+    return result
 
 
 class Transcriber:
@@ -87,7 +162,7 @@ class Transcriber:
 
     def run(self, episode: Episode) -> Episode:
         """Transcribe + align *episode*'s audio; set episode.transcript and return it."""
-        logger.info("Transcribing episode %r", episode.key)
+        logger.info("Transcribing episode %r", episode.metadata.episode_number)
         audio = episode.audio()
         with capture_vad_segments(
             self.asr.vad_model,
@@ -99,7 +174,7 @@ class Transcriber:
                 chunk_size=self.config.chunk_size,
             )
         for segment in result["segments"]:
-            segment["text"] = segment["text"].translate(CYRILLIC_TO_LATIN)
+            segment["text"] = transliterate_serbian(segment["text"])
         result["segments"] = self._retry_collapsed(audio, result["segments"])
         if self.align_model is not None:
             result = whisperx.align(
@@ -130,13 +205,18 @@ class Transcriber:
                         [*untouched, *realigned["segments"]],
                         key=lambda segment: segment["start"],
                     )
+        if self.config.split_on_ellipsis:
+            result["segments"] = split_ellipsis_segments(result["segments"])
         for segment in result["segments"]:
             for word in segment.get("words", []):
-                word["word"] = word["word"].translate(CYRILLIC_TO_LATIN)
-        episode.transcript = Transcript(result["segments"], file=episode.full_name)
+                word["word"] = transliterate_serbian(word["word"])
+        episode.transcript = Transcript(
+            result["segments"],
+            file=episode.metadata.youtube_title,
+        )
         logger.info(
             "Transcribed episode %r: %d segments",
-            episode.key,
+            episode.metadata.episode_number,
             len(episode.transcript.segments),
         )
         return episode
@@ -173,7 +253,7 @@ class Transcriber:
             retry_segments = []
             for item in retry["segments"]:
                 item = deepcopy(item)
-                item["text"] = item["text"].translate(CYRILLIC_TO_LATIN)
+                item["text"] = transliterate_serbian(item["text"])
                 item["start"] += start
                 item["end"] += start
                 retry_segments.append(item)

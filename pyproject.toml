@@ -8,12 +8,38 @@ dependencies = [
     "ipykernel>=7.3.0",
     "jupyter>=1.1.1",
     "mlflow-skinny>=3.14.0",
+    "numpy>=2.0.0",
     "pandas>=2.2.0",
     "pydantic>=2.13.4",
     "ruff>=0.15.20",
     "scikit-learn>=1.5.0",
     "whisperx>=3.8.6",
 ]
+
+[project.optional-dependencies]
+search = [
+    # 5.3+ imports torchcodec eagerly and only guards against ImportError/OSError,
+    # so a torchcodec that cannot find FFmpeg (RuntimeError) breaks text search.
+    "sentence-transformers>=3.4.0,<5.3",
+    "streamlit>=1.42.0",
+]
+test = [
+    "pytest>=8.3.0",
+]
+
+[project.scripts]
+dp-segment = "drzavni_posao.search.conform.pipeline:main"
+dp-build-bm25 = "drzavni_posao.search.indexing.bm25:main"
+dp-build-vectors = "drzavni_posao.search.indexing.vector:main"
+dp-search = "drzavni_posao.search.retrieval.engine:main"
+dp-evaluate = "drzavni_posao.search.evaluation.runner:main"
+
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["drzavni_posao", "drzavni_posao.*"]
 
 [tool.ruff.lint.per-file-ignores]
 "notebooks/*.ipynb" = ["E402", "F401", "F821"]

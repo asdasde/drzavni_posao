@@ -11,16 +11,17 @@ from .metrics import (
     labeled_segments,
 )
 from .tracking import MlflowTracker, Stage
+from .transcript import Transcript
 
 ASSIGNMENT_PREFIX = "assignment"
 
 
-def _cached_json(cache_dir: str | Path | None, name: str, download) -> dict:
+def _cached_json(cache_dir: Path | None, relative_path: Path, download) -> dict:
     """Run artifacts never change once logged, so a hit needs no freshness check."""
     if cache_dir is None:
         return download()
 
-    path = Path(cache_dir) / name
+    path = cache_dir / relative_path
     if path.exists():
         return json.loads(path.read_text(encoding="utf-8"))
 
@@ -33,34 +34,36 @@ def _cached_json(cache_dir: str | Path | None, name: str, download) -> dict:
 def run_labeled_segments(
     tracker: MlflowTracker,
     run_id: str,
-    label_dir: str | Path,
-    cache_dir: str | Path | None = None,
+    label_dir: Path,
+    cache_dir: Path | None = None,
 ) -> pd.DataFrame:
     """Labeled segments of every episode of a run that has saved labels."""
     config = _cached_json(
         cache_dir,
-        f"{run_id}/config.json",
+        Path(run_id) / "config.json",
         lambda: tracker._configuration(run_id),
     )
     trim_start = config["audio"]["trim_start"]
     episodes = []
     for episode_key, state in tracker.episode_run_states(run_id).items():
-        path = Path(label_dir) / f"{episode_key}.json"
+        path = label_dir / f"{episode_key}.json"
         if Stage.CHARACTER_ASSIGNER not in state.completed_stages or not path.exists():
             continue
         labels = json.loads(path.read_text(encoding="utf-8"))["segments"]
         if not labels:
             continue
 
-        transcript = _cached_json(
-            cache_dir,
-            f"{run_id}/{episode_key}.json",
-            lambda: tracker.stage_transcript(
-                state.run_id,
-                Stage.CHARACTER_ASSIGNER,
-            ).to_dict(),
+        transcript = Transcript.from_dict(
+            _cached_json(
+                cache_dir,
+                Path(run_id) / f"{episode_key}.json",
+                lambda: tracker.stage_transcript(
+                    state.run_id,
+                    Stage.CHARACTER_ASSIGNER,
+                ).to_dict(),
+            )
         )
-        segments = labeled_segments(labels, transcript["segments"], trim_start)
+        segments = labeled_segments(labels, transcript.segments, trim_start)
         segments.insert(0, "episode_key", episode_key)
         segments.insert(1, "episode_run_id", state.run_id)
         episodes.append(segments)
@@ -87,8 +90,8 @@ def _log_assignment(segments: pd.DataFrame) -> None:
 def evaluate_run(
     tracker: MlflowTracker,
     run_id: str,
-    label_dir: str | Path,
-    cache_dir: str | Path | None = None,
+    label_dir: Path,
+    cache_dir: Path | None = None,
 ) -> pd.DataFrame:
     """Score a character-assignment run against saved labels, back onto its runs.
 

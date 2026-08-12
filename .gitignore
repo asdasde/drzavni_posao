@@ -15,7 +15,10 @@ wheels/
 
 # Generated data and artifacts
 artifacts/
-data/
+data/*
+!data/youtube_episodes.json
+!data/evaluation_queries.jsonl
+!data/evaluation_queries_expansion.jsonl
 downloads/
 mlruns/
 transcripts/
@@ -33,6 +36,8 @@ mlflow.db
 !notebooks/compare_assignment_runs.ipynb
 !notebooks/large-v3-hotwords-assignment-nb.ipynb
 !notebooks/large-v3-vad-realignment.ipynb
+!notebooks/large-v3-vad-realignment-ellipsis-beam10.ipynb
 !notebooks/character-assignment-eda.ipynb
 !notebooks/ellipsis-split-analysis.ipynb
 scripts/export_labeling_run.py
+.isaac/

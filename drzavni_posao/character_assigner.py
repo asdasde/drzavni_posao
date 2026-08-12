@@ -59,16 +59,23 @@ class CharacterAssigner:
         """Label *episode*'s segments with character names; return the episode."""
         if episode.transcript is None:
             raise ValueError(
-                f"Episode {episode.key!r} has no transcript; run Transcriber first"
+                f"Episode {episode.metadata.episode_number!r} has no transcript; "
+                "run Transcriber first"
             )
         segments = episode.transcript.segments
         audio = episode.audio()
 
         if not any(segment.get("speaker") for segment in segments):
-            logger.info("Assigning characters in %r (per-segment)", episode.key)
+            logger.info(
+                "Assigning characters in %r (per-segment)",
+                episode.metadata.episode_number,
+            )
             self._assign_per_segment(segments, audio)
         else:
-            logger.info("Assigning characters in %r (per-cluster)", episode.key)
+            logger.info(
+                "Assigning characters in %r (per-cluster)",
+                episode.metadata.episode_number,
+            )
             self._assign_per_cluster(segments, audio)
         return episode
 

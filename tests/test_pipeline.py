@@ -1,6 +1,7 @@
 import json
 import unittest
 from contextlib import contextmanager
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
@@ -166,7 +167,7 @@ class PipelineExecutionTests(unittest.TestCase):
             Stage.TRANSCRIPTION,
             {"aligned": 1, "repeated": 2},
         )
-        media.save.assert_called_once_with(episode, subdir=name)
+        media.save.assert_called_once_with(episode, subdir=Path(name))
         episode.clear_audio.assert_called_once()
         transcriber_type.return_value.free.assert_called_once()
         tracker.log_parent_averages.assert_called_once_with("parent")

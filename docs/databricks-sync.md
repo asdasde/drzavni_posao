@@ -29,10 +29,16 @@ databricks sync drzavni_posao \
   --full \
   --exclude "__pycache__/**" \
   --exclude "*.pyc"
+databricks sync data \
+  /Users/luka.erceg@databricks.com/drzavni_posao/data \
+  --profile staging \
+  --full \
+  --include "youtube_episodes.json"
 ```
 
-Add `--dry-run` to preview the upload. This syncs only the Python package; it
-does not upload notebooks, tests, gallery data, or other repository files.
+Add `--dry-run` to preview the upload. These commands sync the Python package
+and its required episode catalog; they do not upload notebooks, tests, gallery
+data, or generated files.
 
 ## Sync notebooks
 
