@@ -11,7 +11,7 @@ from ...episode import Episode
 from ...store import DEFAULT_CATALOG_PATH, MediaStore
 from ...transcript import Transcript
 from ..common.io import write_jsonl
-from ..common.models import SegmentRecord, format_timestamp
+from ..common.models import SegmentRecord
 from ..text import CHARACTER_DISPLAY_NAMES, normalize_text, semantic_text
 
 
@@ -175,16 +175,11 @@ def build_records(
                     segment_id=f"{video_id}_{chunk_number:04d}",
                     start_seconds=start,
                     end_seconds=end,
-                    start_time=format_timestamp(start),
-                    end_time=format_timestamp(end),
                     video_start_seconds=video_start,
                     video_end_seconds=video_end,
-                    video_start_time=format_timestamp(video_start),
-                    video_end_time=format_timestamp(video_end),
                     text_original=text_original,
                     text_semantic=semantic_text(dense_text),
                     text_normalized=normalize_text(lexical_text),
-                    speakers=speakers,
                     speaker_keys=speaker_keys,
                     source_segment_indices=source_indices,
                     youtube_url=episode_meta.original_url,
@@ -236,7 +231,7 @@ def main() -> None:
         max_seconds=args.max_seconds,
         max_gap_seconds=args.max_gap_seconds,
     )
-    write_jsonl(args.segments_output, (segment.to_dict() for segment in segments))
+    write_jsonl(args.segments_output, (segment.model_dump() for segment in segments))
     episode_count = len({segment.youtube_video_id for segment in segments})
     logger.info("Wrote %d segments from %d episodes", len(segments), episode_count)
 

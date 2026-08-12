@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
-from typing import Any
+from pydantic import BaseModel, ConfigDict, Field
+
+from ..text import CHARACTER_DISPLAY_NAMES
 
 
 def format_timestamp(seconds: float) -> str:
@@ -12,28 +13,41 @@ def format_timestamp(seconds: float) -> str:
     return f"{hours:02d}:{minutes:02d}:{secs:02d}"
 
 
-@dataclass(slots=True)
-class SegmentRecord:
+class SegmentRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
     youtube_video_id: str
     episode_title: str
     segment_id: str
     start_seconds: float
     end_seconds: float
-    start_time: str
-    end_time: str
     video_start_seconds: float
     video_end_seconds: float
-    video_start_time: str
-    video_end_time: str
     text_original: str
     text_semantic: str
     text_normalized: str
-    speakers: list[str] = field(default_factory=list)
-    speaker_keys: list[str] = field(default_factory=list)
-    source_segment_indices: list[int] = field(default_factory=list)
+    speaker_keys: list[str] = Field(default_factory=list)
+    source_segment_indices: list[int] = Field(default_factory=list)
     youtube_url: str | None = None
     source_file: str = ""
     source_time_offset_seconds: float = 0.0
 
-    def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+    @property
+    def start_time(self) -> str:
+        return format_timestamp(self.start_seconds)
+
+    @property
+    def end_time(self) -> str:
+        return format_timestamp(self.end_seconds)
+
+    @property
+    def video_start_time(self) -> str:
+        return format_timestamp(self.video_start_seconds)
+
+    @property
+    def video_end_time(self) -> str:
+        return format_timestamp(self.video_end_seconds)
+
+    @property
+    def speakers(self) -> list[str]:
+        return [CHARACTER_DISPLAY_NAMES.get(key, key) for key in self.speaker_keys]

@@ -1,4 +1,3 @@
-from dataclasses import replace
 from contextlib import redirect_stdout
 from io import StringIO
 import json
@@ -11,7 +10,7 @@ from pathlib import Path
 import numpy as np
 
 from drzavni_posao.search.retrieval import engine as engine_module
-from drzavni_posao.search.common.models import SegmentRecord, format_timestamp
+from drzavni_posao.search.common.models import SegmentRecord
 from drzavni_posao.search.indexing.bm25 import BM25Hit, BM25Index
 from drzavni_posao.search.indexing.vector import (
     DenseHit,
@@ -80,22 +79,39 @@ def make_segment(
         segment_id=segment_id,
         start_seconds=start,
         end_seconds=end,
-        start_time=format_timestamp(start),
-        end_time=format_timestamp(end),
         video_start_seconds=start + 25,
         video_end_seconds=end + 25,
-        video_start_time=format_timestamp(start + 25),
-        video_end_time=format_timestamp(end + 25),
         text_original=text,
         text_semantic=semantic or text,
         text_normalized=text,
-        speakers=keys,
         speaker_keys=keys,
         source_segment_indices=[0],
     )
 
 
 class RetrievalTests(unittest.TestCase):
+    def test_segment_record_derives_display_fields(self) -> None:
+        segment = SegmentRecord(
+            youtube_video_id="e1",
+            episode_title="Title",
+            segment_id="s1",
+            start_seconds=1,
+            end_seconds=21,
+            video_start_seconds=26,
+            video_end_seconds=46,
+            text_original="text",
+            text_semantic="text",
+            text_normalized="text",
+            speaker_keys=["boskic"],
+            source_segment_indices=[0],
+        )
+
+        self.assertEqual(segment.start_time, "00:00:01")
+        self.assertEqual(segment.video_end_time, "00:00:46")
+        self.assertEqual(segment.speakers, ["Boškić"])
+        self.assertNotIn("start_time", segment.model_dump())
+        self.assertNotIn("speakers", segment.model_dump())
+
     def test_resolve_model_path_returns_path_for_local_directory(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary)
@@ -392,7 +408,9 @@ class RetrievalTests(unittest.TestCase):
             path = Path(temporary) / "vectors"
             self.vector.save(path)
             changed = [
-                replace(self.segments[0], text_semantic="different embedded passage"),
+                self.segments[0].model_copy(
+                    update={"text_semantic": "different embedded passage"}
+                ),
                 *self.segments[1:],
             ]
             with self.assertRaisesRegex(ValueError, "semantic segment corpus"):
