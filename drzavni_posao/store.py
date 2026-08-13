@@ -58,23 +58,15 @@ class MediaStore:
         except KeyError:
             raise KeyError(f"Episode {key!r} not found in {self.audio_dir}") from None
 
-    def audio_path(self, key: str) -> Path:
-        """Full path of the audio file for episode *key*."""
-        return self.episode(key).audio_path
-
     def episodes(self) -> Iterator[Episode]:
         """Iterate over episodes ordered by broadcast date."""
         yield from sorted(self._index.values())
 
     # ── Transcripts ───────────────────────────────────────────────────────
 
-    def _out_dir(self, subdir: Path = Path()) -> Path:
-        """Resolve the output directory for *subdir* (defaults to run_dir)."""
-        return self.run_dir / subdir
-
     def transcript_path(self, key: str, subdir: Path = Path()) -> Path:
         """<run_dir>/[subdir/]<key>.json"""
-        return self._out_dir(subdir) / f"{key}.json"
+        return self.run_dir / subdir / f"{key}.json"
 
     def exists(self, key: str, subdir: Path = Path()) -> bool:
         """True if a transcript already exists for episode *key*."""
@@ -89,7 +81,7 @@ class MediaStore:
         key = episode.key
         if episode.transcript is None:
             raise ValueError(f"Episode {key!r} has no transcript to save")
-        out_dir = self._out_dir(subdir)
+        out_dir = self.run_dir / subdir
         out_dir.mkdir(parents=True, exist_ok=True)
         (out_dir / f"{key}.txt").write_text(
             episode.transcript.render(), encoding="utf-8"
@@ -115,7 +107,7 @@ class MediaStore:
 
         Returns an empty list if the directory does not exist.
         """
-        out_dir = self._out_dir(subdir)
+        out_dir = self.run_dir / subdir
         if not out_dir.exists():
             return []
         episodes = []

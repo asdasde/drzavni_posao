@@ -26,12 +26,8 @@ class Transcript:
             lines.append(f"[{spk}] {text}" if spk else text)
         return "\n".join(lines)
 
-    @property
-    def text(self) -> str:
-        return self.render()
-
     def to_dict(self) -> dict:
-        return {"file": self.file, "text": self.render(), "segments": self.segments}
+        return {"file": self.file, "segments": self.segments}
 
     @classmethod
     def from_dict(cls, d: dict) -> "Transcript":
