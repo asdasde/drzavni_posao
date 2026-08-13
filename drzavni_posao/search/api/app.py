@@ -17,6 +17,7 @@ except ImportError as error:  # pragma: no cover - exercised only without api ex
 from pydantic import BaseModel, Field, field_validator
 
 from drzavni_posao.search.common.device import resolve_torch_device
+from drzavni_posao.search.common.io import load_segments
 from drzavni_posao.search.retrieval.engine import SearchEngine
 from drzavni_posao.search.retrieval.rerank import (
     DEFAULT_RERANKER_MODEL,
@@ -53,6 +54,15 @@ def _available_methods() -> list[str]:
     if _vector_metadata_exists(VECTOR_PATH):
         return list(EXPOSED_METHODS)
     return ["bm25"]
+
+
+@functools.lru_cache
+def corpus_stats() -> dict[str, int]:
+    segments = load_segments(SEGMENTS_PATH)
+    return {
+        "episodes": len({segment.youtube_video_id for segment in segments}),
+        "segments": len(segments),
+    }
 
 
 @functools.lru_cache
@@ -103,7 +113,11 @@ app.add_middleware(
 
 @app.get("/health")
 def health() -> dict[str, Any]:
-    return {"status": "ok", "methods": _available_methods()}
+    try:
+        stats = corpus_stats()
+    except (FileNotFoundError, ValueError, OSError):
+        stats = {"episodes": 0, "segments": 0}
+    return {"status": "ok", "methods": _available_methods(), **stats}
 
 
 @app.post("/search")

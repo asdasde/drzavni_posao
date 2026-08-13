@@ -1,7 +1,22 @@
 import { mockSearch } from "./mock";
-import type { SearchParams, SearchResponse } from "./types";
+import type { HealthResponse, SearchParams, SearchResponse } from "./types";
 
 const API_BASE_URL: string | undefined = import.meta.env.VITE_API_BASE_URL || undefined;
+
+export async function fetchHealth(): Promise<HealthResponse | null> {
+  if (!API_BASE_URL) {
+    return null;
+  }
+  try {
+    const response = await fetch(`${API_BASE_URL.replace(/\/$/, "")}/health`);
+    if (!response.ok) {
+      return null;
+    }
+    return (await response.json()) as HealthResponse;
+  } catch {
+    return null;
+  }
+}
 
 export async function search(params: SearchParams): Promise<SearchResponse> {
   if (!API_BASE_URL) {

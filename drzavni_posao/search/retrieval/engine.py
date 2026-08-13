@@ -156,23 +156,27 @@ class SearchEngine:
         dense_score: float,
         rerank_score: float | None,
     ) -> str:
-        evidence: list[str] = []
+        parts: list[str] = []
         if matched_characters:
             names = ", ".join(display_name(item) for item in matched_characters)
-            evidence.append(f"matches requested character metadata/text ({names})")
+            verb = "pojavljuje" if len(matched_characters) == 1 else "pojavljuju"
+            parts.append(f"u sceni se {verb} {names}")
         if matched_terms:
-            evidence.append(f"shares lexical evidence ({', '.join(matched_terms[:6])})")
+            parts.append("poklapa se po rečima iz upita")
         if method in {"dense", "hybrid", "hybrid_rerank"} and dense_score >= 0.5:
-            evidence.append("has a strong relative multilingual semantic match")
-        if method == "cross_encoder" and rerank_score is not None:
-            evidence.append("is a strong exhaustive cross-encoder match")
-        elif method == "hybrid_rerank" and rerank_score is not None:
-            evidence.append("was promoted by the cross-encoder reranker")
-        return (
-            "; ".join(evidence)
-            if evidence
-            else "best relative match in the candidate set"
-        )
+            parts.append("smisao scene je blizak vašem opisu")
+        if method in {"cross_encoder", "hybrid_rerank"} and rerank_score is not None:
+            parts.append("dodatna provera je potvrdila da scena odgovara upitu")
+        if not parts:
+            return "Najbliža pronađena scena za ovaj opis."
+        first, *rest = parts
+        if not rest:
+            return first[0].upper() + first[1:] + "."
+        if len(rest) == 1:
+            body = f"{first}, a {rest[0]}"
+        else:
+            body = f"{first}, {', '.join(rest[:-1])} i {rest[-1]}"
+        return body[0].upper() + body[1:] + "."
 
     def search(
         self,

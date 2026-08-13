@@ -1,13 +1,26 @@
-import type { FormEvent } from "react";
-import { METHOD_LABELS, type SearchMethod, type SearchParams } from "../api/types";
+import { useState, type FormEvent } from "react";
+import {
+  METHOD_HINTS,
+  METHOD_LABELS,
+  METHOD_TECHNICAL_LABELS,
+  type SearchMethod,
+  type SearchParams,
+} from "../api/types";
 
 const EXAMPLE_QUERIES = [
-  "Čvarkov priča o izborima",
-  "the scene about a broken computer",
-  "Торбица се жали на плату",
+  "kad Boškić nema keš za kafu jer ne primaju kartice",
+  "kad Torbica hoće da se prijavi za Prvi glas Srbije",
+  "Čvarkov sakrio ušteđevinu u stare registratore",
 ];
 
-const METHODS: SearchMethod[] = ["bm25", "dense", "hybrid", "hybrid_rerank"];
+const SIMPLE_METHODS: SearchMethod[] = ["bm25", "dense"];
+const TECHNICAL_METHODS: SearchMethod[] = ["bm25", "dense", "hybrid", "hybrid_rerank"];
+
+function methodButtonClass(selected: boolean) {
+  return `border-b border-r border-ink px-5 py-2 uppercase tracking-[1.2px] cursor-pointer ${
+    selected ? "bg-ink text-paper" : "bg-transparent text-ink"
+  }`;
+}
 
 interface SearchSectionProps {
   query: string;
@@ -28,6 +41,8 @@ export default function SearchSection({
   loading,
   onSearch,
 }: SearchSectionProps) {
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault();
     onSearch(query);
@@ -69,7 +84,7 @@ export default function SearchSection({
             type="text"
             value={query}
             onChange={(event) => onQueryChange(event.target.value)}
-            placeholder="epizoda u kojoj se Boškić i Čvarkov svađaju oko izbora"
+            placeholder={EXAMPLE_QUERIES[0]}
             className="flex-1 bg-transparent font-mono text-sm text-ink placeholder:text-neutral-500 focus:outline-none"
           />
         </div>
@@ -82,26 +97,84 @@ export default function SearchSection({
         </button>
       </form>
 
-      <div className="flex flex-wrap items-center justify-center gap-4 font-mono text-xs tracking-[1.2px] uppercase">
-        <span className="text-neutral-600">Metod:</span>
-        <div className="flex border-t border-l border-ink">
-          {METHODS.map((value) => (
-            <button
-              key={value}
-              type="button"
-              onClick={() => onMethodChange(value)}
-              className={`border-b border-r border-ink px-5 py-2 uppercase tracking-[1.2px] cursor-pointer ${
-                method === value ? "bg-ink text-paper" : "bg-transparent text-ink"
+      <div className="flex w-full max-w-[820px] flex-col items-center gap-3">
+        <div className="flex flex-wrap items-center justify-center gap-4 font-mono text-xs tracking-[1.2px] uppercase">
+          <span className="text-neutral-600">Način:</span>
+          <div className="flex border-t border-l border-ink">
+            {SIMPLE_METHODS.map((value) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => onMethodChange(value)}
+                className={methodButtonClass(method === value)}
+              >
+                {METHOD_LABELS[value]}
+              </button>
+            ))}
+            <div
+              className={`flex ${
+                method === "hybrid" || method === "hybrid_rerank" ? "bg-neutral-200" : ""
               }`}
             >
-              {METHOD_LABELS[value]}
-            </button>
-          ))}
+              <button
+                type="button"
+                onClick={() => onMethodChange("hybrid")}
+                className={methodButtonClass(method === "hybrid")}
+              >
+                Kombinovano
+              </button>
+              <button
+                type="button"
+                title="Preciznija, ali sporija varijanta — za maksimalno razumevanje"
+                onClick={() => onMethodChange("hybrid_rerank")}
+                className={methodButtonClass(method === "hybrid_rerank")}
+              >
+                Preciznije
+              </button>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setAdvancedOpen((open) => !open)}
+            aria-expanded={advancedOpen}
+            className={`border border-ink px-3 py-2 uppercase tracking-[1.2px] cursor-pointer ${
+              advancedOpen ? "bg-ink text-paper" : "bg-transparent text-ink"
+            }`}
+          >
+            Napredno {advancedOpen ? "▴" : "▾"}
+          </button>
         </div>
-        <span className="text-neutral-600">
-          Epizoda: {params.top_k} · Kandidata: {params.candidate_k} ·{" "}
-          {params.group_by_episode ? "1 scena / epizodi" : "sve scene"}
-        </span>
+
+        <p className="font-body text-sm italic text-neutral-600 text-center normal-case tracking-normal">
+          {METHOD_HINTS[method]}
+        </p>
+
+        {advancedOpen && (
+          <div className="flex w-full flex-col gap-3 border border-ink bg-paper px-5 py-4">
+            <div className="flex flex-wrap items-center gap-3 font-mono text-xs tracking-[1.2px] uppercase">
+              <span className="text-neutral-600">Algoritam:</span>
+              <div className="flex border-t border-l border-ink">
+                {TECHNICAL_METHODS.map((value) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => onMethodChange(value)}
+                    className={`border-b border-r border-ink px-4 py-2 uppercase tracking-[1.2px] cursor-pointer ${
+                      method === value ? "bg-ink text-paper" : "bg-transparent text-ink"
+                    }`}
+                  >
+                    {METHOD_TECHNICAL_LABELS[value]}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <p className="font-mono text-xs tracking-[1.2px] uppercase text-neutral-600">
+              {METHOD_LABELS[method]} = {METHOD_TECHNICAL_LABELS[method]} ·
+              Rezultata: {params.top_k} · Kandidata: {params.candidate_k} ·{" "}
+              {params.group_by_episode ? "1 scena / epizodi" : "sve scene"}
+            </p>
+          </div>
+        )}
       </div>
 
       <div className="flex flex-wrap items-center justify-center gap-3">
