@@ -15,6 +15,7 @@ from fastapi.testclient import TestClient
 EXPECTED_RESULT_KEYS = {
     "rank",
     "youtube_video_id",
+    "episode_number",
     "episode_title",
     "segment_id",
     "start_seconds",
@@ -152,18 +153,23 @@ class SearchApiTests(unittest.TestCase):
         self._patch_vector_path(exists=False)
         response = self.client.get("/health")
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json(), {"status": "ok", "methods": ["bm25"]})
+        payload = response.json()
+        self.assertEqual(payload["status"], "ok")
+        self.assertEqual(payload["methods"], ["bm25"])
+        self.assertIsInstance(payload["episodes"], int)
+        self.assertIsInstance(payload["segments"], int)
 
     def test_health_reports_all_methods_with_vectors(self) -> None:
         self._patch_vector_path(exists=True)
         response = self.client.get("/health")
+        payload = response.json()
+        self.assertEqual(payload["status"], "ok")
         self.assertEqual(
-            response.json(),
-            {
-                "status": "ok",
-                "methods": ["bm25", "dense", "hybrid", "hybrid_rerank"],
-            },
+            payload["methods"],
+            ["bm25", "dense", "hybrid", "hybrid_rerank"],
         )
+        self.assertIsInstance(payload["episodes"], int)
+        self.assertIsInstance(payload["segments"], int)
 
 
 if __name__ == "__main__":

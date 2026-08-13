@@ -6,6 +6,7 @@ const MOCK_RESULTS: SearchResultItem[] = [
   {
     rank: 1,
     youtube_video_id: "mock143",
+    episode_number: 143,
     episode_title: "Odlaganje izbora",
     segment_id: "ep143_0007",
     start_seconds: 436,
@@ -17,7 +18,7 @@ const MOCK_RESULTS: SearchResultItem[] = [
     youtube_url: "https://www.youtube.com/watch?v=dp-ep143&t=461s",
     speakers: ["Boškić", "Čvarkov", "Torbica"],
     snippet:
-      "ČVARKOV: Boškiću, izbori se ne odlažu, izbori se organizovano ne održe! BOŠKIĆ: A ko će to da potpiše? ČVARKOV: Onaj ko je potpisao i prošli put — niko.",
+      "[Đorđe Čvarkov] Boškiću, izbori se ne odlažu, izbori se organizovano ne održe!\n[Boškić] A ko će to da potpiše?\n[Đorđe Čvarkov] Onaj ko je potpisao i prošli put — niko.",
     score: 0.912,
     score_components: {
       bm25: 0.94,
@@ -29,11 +30,12 @@ const MOCK_RESULTS: SearchResultItem[] = [
     matched_characters: ["boskic", "cvarkov"],
     matched_terms: ["izbori", "svađa"],
     reason:
-      "Zašto: poklapanje ključnih reči „izbori“ i imena likova; visok semantički skor scene.",
+      "U sceni se pojavljuju Boškić i Đorđe Čvarkov, poklapa se po rečima iz upita i smisao scene je blizak vašem opisu.",
   },
   {
     rank: 2,
     youtube_video_id: "mock087",
+    episode_number: 87,
     episode_title: "Glasačka kutija",
     segment_id: "ep087_0003",
     start_seconds: 160,
@@ -45,7 +47,7 @@ const MOCK_RESULTS: SearchResultItem[] = [
     youtube_url: "https://www.youtube.com/watch?v=dp-ep087&t=185s",
     speakers: ["Čvarkov", "Torbica"],
     snippet:
-      "TORBICA: [Преко воље] Čvarkove, gde je kutija? ČVARKOV: Koja kutija? TORBICA: Glasačka. ČVARKOV: Služi kao saksija, od marta.",
+      "[Dragan Torbica] [Преко воље] Čvarkove, gde je kutija?\n[Đorđe Čvarkov] Koja kutija?\n[Dragan Torbica] Glasačka.\n[Đorđe Čvarkov] Služi kao saksija, od marta.",
     score: 0.847,
     score_components: {
       bm25: 0.91,
@@ -56,12 +58,12 @@ const MOCK_RESULTS: SearchResultItem[] = [
     },
     matched_characters: ["cvarkov"],
     matched_terms: ["glasanje", "komisija"],
-    reason:
-      "Zašto: BM25 pogodak na „izborna komisija“; scena pominje glasanje u kancelariji.",
+    reason: "U sceni se pojavljuje Đorđe Čvarkov, a poklapa se po rečima iz upita.",
   },
   {
     rank: 3,
     youtube_video_id: "mock211",
+    episode_number: 211,
     episode_title: "Referendum u kancelariji",
     segment_id: "ep211_0011",
     start_seconds: 683,
@@ -73,7 +75,7 @@ const MOCK_RESULTS: SearchResultItem[] = [
     youtube_url: "https://www.youtube.com/watch?v=dp-ep211&t=708s",
     speakers: ["Boškić", "Torbica"],
     snippet:
-      "BOŠKIĆ: Predlažem referendum: ostajemo li danas prekovremeno? TORBICA: Ja glasam nevažeće. BOŠKIĆ: Upisano — jednoglasno usvojeno.",
+      "[Boškić] Predlažem referendum: ostajemo li danas prekovremeno?\n[Dragan Torbica] Ja glasam nevažeće.\n[Boškić] Upisano — jednoglasno usvojeno.",
     score: 0.791,
     score_components: {
       bm25: 0.62,
@@ -84,7 +86,7 @@ const MOCK_RESULTS: SearchResultItem[] = [
     },
     matched_characters: ["boskic"],
     matched_terms: ["glasanje"],
-    reason: "Zašto: semantička sličnost sa „svađa oko glasanja“; niži leksički skor.",
+    reason: "U sceni se pojavljuje Boškić, a smisao scene je blizak vašem opisu.",
   },
 ];
 

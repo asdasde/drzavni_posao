@@ -21,6 +21,7 @@ class SearchResult:
         return {
             "rank": self.rank,
             "youtube_video_id": self.segment.youtube_video_id,
+            "episode_number": self.segment.episode_number,
             "episode_title": self.segment.episode_title,
             "segment_id": self.segment.segment_id,
             "start_seconds": self.segment.start_seconds,

@@ -31,7 +31,7 @@ export default function ResultsList({ response }: ResultsListProps) {
       ) : (
         response.results.map((result, index) => (
           <ResultCard
-            key={result.segment_id}
+            key={`${response.method}:${result.segment_id}`}
             result={result}
             isLast={index === response.results.length - 1}
           />

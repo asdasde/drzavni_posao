@@ -1,5 +1,5 @@
-import { useRef, useState } from "react";
-import { search } from "./api/client";
+import { useEffect, useRef, useState } from "react";
+import { fetchHealth, search } from "./api/client";
 import type { SearchMethod, SearchResponse } from "./api/types";
 import FooterTicker from "./components/FooterTicker";
 import Masthead from "./components/Masthead";
@@ -18,11 +18,20 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [response, setResponse] = useState<SearchResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [episodeCount, setEpisodeCount] = useState<number | null>(null);
   const requestId = useRef(0);
+
+  useEffect(() => {
+    void fetchHealth().then((health) => {
+      if (health?.episodes) {
+        setEpisodeCount(health.episodes);
+      }
+    });
+  }, []);
 
   const runSearch = async (searchQuery: string, searchMethod: SearchMethod = method) => {
     const trimmed = searchQuery.trim();
-    if (!trimmed || loading) {
+    if (!trimmed) {
       return;
     }
     const id = ++requestId.current;
@@ -58,7 +67,7 @@ export default function App() {
 
   return (
     <div className="flex min-h-screen w-full flex-col bg-paper text-ink">
-      <Masthead />
+      <Masthead episodeCount={episodeCount} />
       <SearchSection
         query={query}
         onQueryChange={setQuery}
@@ -77,7 +86,7 @@ export default function App() {
         </div>
       )}
       {response && !error && <ResultsList response={response} />}
-      <FooterTicker />
+      <FooterTicker episodeCount={episodeCount} />
     </div>
   );
 }
