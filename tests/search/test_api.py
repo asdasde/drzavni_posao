@@ -14,7 +14,7 @@ from fastapi.testclient import TestClient
 
 EXPECTED_RESULT_KEYS = {
     "rank",
-    "episode_id",
+    "youtube_video_id",
     "episode_title",
     "segment_id",
     "start_seconds",
@@ -35,17 +35,21 @@ EXPECTED_RESULT_KEYS = {
 
 
 def _make_result(rank: int = 1) -> SearchResult:
-    segment = SegmentRecord.from_dict(
-        {
-            "episode_id": "ep-001",
-            "episode_title": "Izbori",
-            "segment_id": "ep-001-seg-0001",
-            "start_seconds": 12.0,
-            "end_seconds": 34.0,
-            "text_original": "Boškić i Čvarkov se svađaju oko izbora.",
-            "speakers": ["Boškić", "Čvarkov"],
-            "youtube_url": "https://youtube.com/watch?v=abc",
-        }
+    segment = SegmentRecord(
+        youtube_video_id="abc",
+        episode_number=1,
+        episode_title="Izbori",
+        segment_id="abc-seg-0001",
+        start_seconds=12.0,
+        end_seconds=34.0,
+        video_start_seconds=12.0,
+        video_end_seconds=34.0,
+        text_original="Boškić i Čvarkov se svađaju oko izbora.",
+        text_semantic="Boškić i Čvarkov se svađaju oko izbora.",
+        text_normalized="boskic i cvarkov se svadjaju oko izbora",
+        speaker_keys=["boskic", "cvarkov"],
+        source_segment_indices=[0],
+        youtube_url="https://youtube.com/watch?v=abc",
     )
     return SearchResult(
         rank=rank,

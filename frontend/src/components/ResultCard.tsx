@@ -69,7 +69,7 @@ export default function ResultCard({ result, isLast }: ResultCardProps) {
             {result.episode_title}
           </h3>
           <span className="font-mono text-xs tracking-[1.2px] uppercase text-neutral-600">
-            {result.episode_id.replace(/^ep/i, "EP ")}
+            {result.youtube_video_id}
           </span>
         </div>
 

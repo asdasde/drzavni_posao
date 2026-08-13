@@ -20,7 +20,7 @@ export interface SearchParams {
 
 export interface SearchResultItem {
   rank: number;
-  episode_id: string;
+  youtube_video_id: string;
   episode_title: string;
   segment_id: string;
   start_seconds: number;

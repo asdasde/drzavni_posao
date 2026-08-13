@@ -5,7 +5,7 @@ const MOCK_LATENCY_MS = 420;
 const MOCK_RESULTS: SearchResultItem[] = [
   {
     rank: 1,
-    episode_id: "ep143",
+    youtube_video_id: "mock143",
     episode_title: "Odlaganje izbora",
     segment_id: "ep143_0007",
     start_seconds: 436,
@@ -33,7 +33,7 @@ const MOCK_RESULTS: SearchResultItem[] = [
   },
   {
     rank: 2,
-    episode_id: "ep087",
+    youtube_video_id: "mock087",
     episode_title: "Glasačka kutija",
     segment_id: "ep087_0003",
     start_seconds: 160,
@@ -61,7 +61,7 @@ const MOCK_RESULTS: SearchResultItem[] = [
   },
   {
     rank: 3,
-    episode_id: "ep211",
+    youtube_video_id: "mock211",
     episode_title: "Referendum u kancelariji",
     segment_id: "ep211_0011",
     start_seconds: 683,
