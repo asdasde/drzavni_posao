@@ -1,0 +1,7 @@
+.git
+.idea
+.venv
+frontend
+transcripts
+*.ipynb
+mlruns
