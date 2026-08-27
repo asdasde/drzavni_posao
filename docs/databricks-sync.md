@@ -33,7 +33,8 @@ databricks sync data \
   /Users/luka.erceg@databricks.com/drzavni_posao/data \
   --profile staging \
   --full \
-  --include "youtube_episodes.json"
+  --include "youtube_episodes.json" \
+  --include "hard_words.jsonl"
 ```
 
 Add `--dry-run` to preview the upload. These commands sync the Python package
