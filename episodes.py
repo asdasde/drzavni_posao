@@ -241,6 +241,7 @@ def download_and_upload(
     options = {
         "format": "bestaudio/best",
         "js_runtimes": {"node": {}},
+        "extractor_args": {"youtube": {"player_client": ["web_embedded"]}},
         "outtmpl": str(directory / "%(title)s.%(ext)s"),
         "postprocessors": [
             {
