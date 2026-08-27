@@ -26,6 +26,30 @@ class Transcript:
             lines.append(f"[{spk}] {text}" if spk else text)
         return "\n".join(lines)
 
+    def collapse_speaker_turns(self) -> "Transcript":
+        """Return a new transcript with adjacent same-speaker segments merged."""
+        turns = []
+        for segment in self.segments:
+            text = (segment.get("text") or "").strip()
+            if not text:
+                continue
+
+            speaker = segment.get("speaker")
+            if turns and turns[-1]["speaker"] == speaker:
+                turns[-1]["text"] = f"{turns[-1]['text']} {text}"
+                turns[-1]["end"] = segment.get("end", turns[-1]["end"])
+                continue
+
+            turns.append(
+                {
+                    "start": segment.get("start"),
+                    "end": segment.get("end"),
+                    "speaker": speaker,
+                    "text": text,
+                }
+            )
+        return Transcript(turns, file=self.file)
+
     def to_dict(self) -> dict:
         return {"file": self.file, "segments": self.segments}
 
