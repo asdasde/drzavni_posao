@@ -3,6 +3,7 @@ import unicodedata
 
 SR: int = 16_000  # WhisperX audio sample rate
 ANONYMOUS_LABEL = "[anonymous]"
+CORE_CHARACTERS = ("Djordje Cvarkov", "Dragan Torbica", "Boskic")
 
 # Serbian Cyrillic → Latin. Whisper flips script mid-transcript; the Transcriber
 # normalizes to Latin once. Digraphs (љ/њ/џ) map to multi-char values, which
