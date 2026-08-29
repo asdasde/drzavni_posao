@@ -5,6 +5,7 @@ description = "Transcription, diarization, and character assignment for Državni
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "datasets>=5.0.1",
     "ipykernel>=7.3.0",
     "jupyter>=1.1.1",
     "mlflow-skinny>=3.14.0",
