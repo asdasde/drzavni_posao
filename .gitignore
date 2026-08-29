@@ -39,5 +39,7 @@ mlflow.db
 !notebooks/large-v3-vad-realignment-ellipsis-beam10.ipynb
 !notebooks/character-assignment-eda.ipynb
 !notebooks/ellipsis-split-analysis.ipynb
+!notebooks/screenplay-pilot-qlora.ipynb
+!notebooks/screenplay-pilot-qlora-episode-losses.ipynb
 scripts/export_labeling_run.py
 .isaac/
