@@ -35,11 +35,21 @@ databricks sync data \
   --full \
   --include "youtube_episodes.json" \
   --include "hard_words.jsonl"
+databricks sync data/labels \
+  /Users/luka.erceg@databricks.com/drzavni_posao/data/labels \
+  --profile staging \
+  --full
+databricks sync data/speaker_galleries \
+  /Users/luka.erceg@databricks.com/drzavni_posao/data/speaker_galleries \
+  --profile staging \
+  --full
 ```
 
-Add `--dry-run` to preview the upload. These commands sync the Python package
-and its required episode catalog; they do not upload notebooks, tests, gallery
-data, or generated files.
+Add `--dry-run` to preview the upload. The first `data` sync is the episode
+catalog and hard-word list. Labels and speaker galleries live under
+`data/labels/` and `data/speaker_galleries/` both locally and on the workspace;
+sync those directories separately so gold JSON is not mixed into the old
+workspace `labels/` folder.
 
 ## Sync notebooks
 
