@@ -13,6 +13,9 @@ wheels/
 .databricks/
 .DS_Store
 
+# Editor/OS
+.idea/
+
 # Generated data and artifacts
 artifacts/
 data/*
@@ -41,4 +44,10 @@ mlflow.db
 !notebooks/ellipsis-split-analysis.ipynb
 !notebooks/screenplay-pilot-qlora.ipynb
 !notebooks/screenplay-pilot-qlora-episode-losses.ipynb
+scripts/export_labeling_run.py
 .isaac/
+
+# Frontend
+node_modules/
+frontend/.env
+frontend/.env.local
