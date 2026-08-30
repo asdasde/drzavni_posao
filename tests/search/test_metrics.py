@@ -11,6 +11,7 @@ from drzavni_posao.search.evaluation.runner import (
     build_argument_parser,
     build_evaluation_manifest,
     calculate_query_metrics,
+    load_evaluation_queries,
     relevance_grades,
 )
 from drzavni_posao.search.retrieval.fusion import HybridWeights
@@ -39,6 +40,31 @@ class EvaluationTests(unittest.TestCase):
         self.assertEqual(args.methods, "bm25")
         self.assertIsNone(args.vectors)
         self.assertEqual(args.queries, Path("data/evaluation_queries.jsonl"))
+        self.assertEqual(args.relevance_level, "scene")
+
+    def test_evaluate_cli_accepts_episode_relevance(self) -> None:
+        args = build_argument_parser().parse_args(["--relevance-level", "episode"])
+        self.assertEqual(args.relevance_level, "episode")
+
+    def test_episode_only_judgment_parses_only_in_episode_mode(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "queries.jsonl"
+            path.write_text(
+                json.dumps(
+                    {
+                        "query_id": "q1",
+                        "query": "ona epizoda sa jubilejom",
+                        "judgments": [{"youtube_video_id": "e1"}],
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            episode_queries = load_evaluation_queries(path, relevance_level="episode")
+            self.assertEqual(episode_queries[0].judgments, (Judgment("e1"),))
+            with self.assertRaisesRegex(ValueError, "A scene judgment needs"):
+                load_evaluation_queries(path)
 
     def test_evaluation_manifest_captures_configuration_and_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -103,6 +129,7 @@ class EvaluationTests(unittest.TestCase):
         self.assertEqual(manifest["models"]["reranker"]["revision"], "reranker-commit")
         self.assertEqual(manifest["evaluation"]["top_k"], 10)
         self.assertEqual(manifest["evaluation"]["rerank_k"], 50)
+        self.assertEqual(manifest["evaluation"]["relevance_level"], "scene")
         self.assertEqual(manifest["data"]["query_count"], 1)
         self.assertEqual(len(manifest["data"]["query_set_fingerprint"]), 64)
         self.assertEqual(len(manifest["data"]["corpus_fingerprint"]), 64)
@@ -172,6 +199,40 @@ class EvaluationTests(unittest.TestCase):
         metrics = calculate_query_metrics(results, judgments)
         expected = (1 + 3 / math.log2(3)) / (3 + 1 / math.log2(3))
         self.assertAlmostEqual(metrics.ndcg_at_10, expected)
+
+    def test_episode_relevance_matches_video_id_without_scene_overlap(self) -> None:
+        judgments = (Judgment("e1"),)
+        metrics = calculate_query_metrics(
+            [result(1, "far-away-scene", "e1", 5000)],
+            judgments,
+            relevance_level="episode",
+        )
+        self.assertEqual(metrics.recall_at_5, 1.0)
+        self.assertEqual(metrics.reciprocal_rank_at_10, 1.0)
+        self.assertEqual(metrics.ndcg_at_10, 1.0)
+
+    def test_episode_metrics_collapse_duplicate_segments_before_ranking(self) -> None:
+        results = [
+            result(1, "e1-a", "e1", 0),
+            result(2, "e1-b", "e1", 100),
+            result(3, "e2-a", "e2", 0),
+        ]
+        metrics = calculate_query_metrics(
+            results, (Judgment("e2"),), relevance_level="episode"
+        )
+        self.assertEqual(metrics.recall_at_5, 1.0)
+        self.assertEqual(metrics.reciprocal_rank_at_10, 0.5)
+        self.assertAlmostEqual(metrics.ndcg_at_10, 1 / math.log2(3))
+
+    def test_episode_metrics_collapse_duplicate_judgments(self) -> None:
+        metrics = calculate_query_metrics(
+            [result(1, "e1-a", "e1", 0)],
+            (Judgment("e1", grade=1), Judgment("e1", grade=2)),
+            relevance_level="episode",
+        )
+        self.assertEqual(metrics.recall_at_5, 1.0)
+        self.assertEqual(metrics.reciprocal_rank_at_10, 1.0)
+        self.assertEqual(metrics.ndcg_at_10, 1.0)
 
 
 if __name__ == "__main__":

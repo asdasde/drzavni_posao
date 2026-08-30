@@ -306,6 +306,13 @@ state. Outputs remain generated artifacts under `artifacts/`; do not commit
 them. Publish benchmark results to MLflow, object storage, or another artifact
 store when they need to be shared.
 
+For an organic, episode-level benchmark, the TikTok collector extracts the
+visible reply-sticker question with multi-frame OCR and matches the post caption
+to the canonical episode catalog. It accepts a row only when both stages are
+confident, keeps failures in resumable append-only state, and deliberately does
+not infer scene timestamps. See [docs/tiktok-eval.md](docs/tiktok-eval.md) for
+browser/profile collection, export, and `--relevance-level episode` evaluation.
+
 ## Data contracts
 
 A segment record contains provenance, retrieval fields, and both time bases:
