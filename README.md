@@ -141,25 +141,28 @@ environment or runtime configuration; do not commit them.
 
 ## Search corpus and indexing
 
-The corpus is built locally from one transcript JSON per episode.
+The corpus is built locally from a labeling export produced by
+`scripts/export_labeling_run.py`. Each episode uses the latest available stage
+transcript (`character_assigner`, then `diarization`, then `transcription`).
 It preserves original transcript evidence for display and derives normalized
 lexical and semantic fields for retrieval. The segmenter performs Serbian
 Cyrillic-to-Latin transliteration, whitespace cleanup, diacritic folding,
 controlled aliases, and overlapping, gap-aware chunks of up to eight source
 utterances and 60 seconds.
 
-The reference build uses a 25-second source-time offset because the acquisition
-notebook removed the intro before transcription. Segment records therefore
-preserve both transcript-relative and video-relative timestamps.
+Video timestamps add `audio.trim_start` from the export's `config.json` unless
+`--source-time-offset` is set. Segment records therefore preserve both
+transcript-relative and video-relative timestamps.
 
-To rebuild the corpus and BM25 index from a transcript export:
+To rebuild the corpus and BM25 index from an MLflow export:
 
 ```bash
+uv run python scripts/export_labeling_run.py --run-id <run_id>
+
 uv run dp-segment \
-  --input transcripts/d69ff97f \
+  --input data/mlflow_exports/<run_id> \
   --segments-output data/segments.jsonl \
-  --catalog data/youtube_episodes.json \
-  --source-time-offset 25
+  --catalog data/youtube_episodes.json
 
 uv run dp-build-bm25 \
   --segments data/segments.jsonl \
@@ -238,8 +241,8 @@ user-facing error rather than downloading one. `DP_RERANKER_MODEL` and
 `DP_RERANKER_REVISION` select an exact locally cached reranker snapshot.
 
 The canonical episode catalog supplies every title, broadcast date, and
-YouTube URL. `--source-time-offset` remains a corpus-build setting because it
-depends on how the transcript audio was trimmed. Results use the catalog URL
+YouTube URL. `--source-time-offset` remains a corpus-build override when the export
+config does not match how the transcript audio was trimmed. Results use the catalog URL
 to create timestamped links and embed videos in the Streamlit app.
 
 ## Evaluation
@@ -312,8 +315,9 @@ data/
   youtube_episodes.json    # canonical episode catalog
   evaluation_queries*.jsonl
   segments.jsonl           # generated, ignored
+  mlflow_exports/          # local MLflow run dumps, ignored
 artifacts/                  # generated indexes/results, ignored
-transcripts/                # generated pipeline output, ignored
+transcripts/                # pipeline scratch on Databricks, ignored
 tests/
 ```
 

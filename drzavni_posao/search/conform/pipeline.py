@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import math
 import re
@@ -9,6 +10,7 @@ from typing import Any
 
 from ...episode import Episode
 from ...store import DEFAULT_CATALOG_PATH, MediaStore
+from ...tracking import Stage
 from ...transcript import Transcript
 from ..common.io import write_jsonl
 from ..common.models import SegmentRecord
@@ -29,6 +31,53 @@ def speaker_key(label: object) -> str | None:
         if character in tokens:
             return character
     return None
+
+
+def _export_transcript_path(episode_dir: Path) -> Path | None:
+    for stage in reversed(tuple(Stage)):
+        path = episode_dir / stage.value / "transcript.json"
+        if path.is_file():
+            return path
+    return None
+
+
+def load_episodes_from_mlflow_export(
+    media: MediaStore,
+    export_dir: Path,
+) -> list[Episode]:
+    """Load the latest stage transcript from an ``export_labeling_run`` tree."""
+    episodes_root = export_dir / "episodes"
+    if not episodes_root.is_dir():
+        raise ValueError(
+            f"{export_dir} is not an MLflow export: expected episodes/<key>/"
+            f"<stage>/transcript.json (data/mlflow_exports/<run_id>)"
+        )
+
+    episodes = []
+    for episode_dir in sorted(episodes_root.iterdir()):
+        if not episode_dir.is_dir():
+            continue
+        path = _export_transcript_path(episode_dir)
+        if path is None:
+            logger.warning("Skipping %s: no stage transcript.json", episode_dir)
+            continue
+        episode = media.episode(episode_dir.name)
+        episode.transcript = Transcript.from_dict(
+            json.loads(path.read_text(encoding="utf-8"))
+        )
+        episodes.append(episode)
+
+    if not episodes:
+        raise ValueError(f"No episode transcripts found in {episodes_root}")
+    return sorted(episodes)
+
+
+def source_time_offset_from_export(export_dir: Path) -> float:
+    config_path = export_dir / "config.json"
+    if not config_path.is_file():
+        return 0.0
+    audio = json.loads(config_path.read_text(encoding="utf-8")).get("audio") or {}
+    return float(audio.get("trim_start") or 0.0)
 
 
 def validate_transcript(transcript: Transcript, source: Path) -> None:
@@ -200,7 +249,7 @@ def main() -> None:
         "--input",
         type=Path,
         required=True,
-        help="Directory containing transcript JSON",
+        help="MLflow export directory (data/mlflow_exports/<run_id>)",
     )
     parser.add_argument(
         "--audio-dir",
@@ -216,7 +265,11 @@ def main() -> None:
         default=DEFAULT_CATALOG_PATH,
         help="Episode catalog JSON",
     )
-    parser.add_argument("--source-time-offset", type=float, default=0.0)
+    parser.add_argument(
+        "--source-time-offset",
+        type=float,
+        help="Video offset in seconds (default: audio.trim_start from export config.json)",
+    )
     parser.add_argument("--max-utterances", type=int, default=8)
     parser.add_argument("--overlap-utterances", type=int, default=2)
     parser.add_argument("--max-seconds", type=float, default=60.0)
@@ -224,9 +277,14 @@ def main() -> None:
     args = parser.parse_args()
 
     media = MediaStore(args.audio_dir, args.input, catalog_path=args.catalog)
+    offset = (
+        args.source_time_offset
+        if args.source_time_offset is not None
+        else source_time_offset_from_export(args.input)
+    )
     segments = build_records(
-        media.load_all(),
-        source_time_offset_seconds=args.source_time_offset,
+        load_episodes_from_mlflow_export(media, args.input),
+        source_time_offset_seconds=offset,
         max_utterances=args.max_utterances,
         overlap_utterances=args.overlap_utterances,
         max_seconds=args.max_seconds,

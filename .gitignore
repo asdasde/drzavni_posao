@@ -41,5 +41,4 @@ mlflow.db
 !notebooks/ellipsis-split-analysis.ipynb
 !notebooks/screenplay-pilot-qlora.ipynb
 !notebooks/screenplay-pilot-qlora-episode-losses.ipynb
-scripts/export_labeling_run.py
 .isaac/
