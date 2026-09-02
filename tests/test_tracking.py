@@ -239,6 +239,13 @@ class MlflowTrackerTests(unittest.TestCase):
             ],
             [None, "next-page"],
         )
+        self.assertEqual(
+            [
+                call.kwargs["max_results"]
+                for call in self.tracker.client.search_runs.call_args_list
+            ],
+            [100, 100],
+        )
 
     def test_episode_run_reuses_unique_child(self):
         with self.start_run(

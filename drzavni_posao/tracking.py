@@ -174,7 +174,7 @@ class MlflowTracker:
                     f"tags.mlflow.parentRunId = '{parent_run_id}' "
                     "AND tags.run_level = 'episode'"
                 ),
-                max_results=1000,
+                max_results=100,
                 order_by=["attributes.start_time DESC"],
                 page_token=page_token,
             )
