@@ -171,14 +171,17 @@ class MlflowTracker:
             page = self.client.search_runs(
                 experiment_ids=[parent.info.experiment_id],
                 filter_string=(
-                    f"tags.mlflow.parentRunId = '{parent_run_id}' "
-                    "AND tags.run_level = 'episode'"
+                    f"tags.`mlflow.parentRunId` = '{parent_run_id}'"
                 ),
                 max_results=100,
                 order_by=["attributes.start_time DESC"],
                 page_token=page_token,
             )
-            runs.extend(page)
+            runs.extend(
+                run
+                for run in page
+                if run.data.tags.get("run_level") == "episode"
+            )
             page_token = page.token
             if not page_token:
                 return runs

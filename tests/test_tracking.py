@@ -218,14 +218,24 @@ class MlflowTrackerTests(unittest.TestCase):
                 super().__init__(runs)
                 self.token = token
 
-        first = SimpleNamespace(info=SimpleNamespace(run_id="first"))
-        second = SimpleNamespace(info=SimpleNamespace(run_id="second"))
+        first = SimpleNamespace(
+            info=SimpleNamespace(run_id="first"),
+            data=SimpleNamespace(tags={"run_level": "episode"}),
+        )
+        stale = SimpleNamespace(
+            info=SimpleNamespace(run_id="stale"),
+            data=SimpleNamespace(tags={}),
+        )
+        second = SimpleNamespace(
+            info=SimpleNamespace(run_id="second"),
+            data=SimpleNamespace(tags={"run_level": "episode"}),
+        )
         self.tracker.client = MagicMock()
         self.tracker.client.get_run.return_value = SimpleNamespace(
             info=SimpleNamespace(experiment_id="experiment")
         )
         self.tracker.client.search_runs.side_effect = [
-            Page([first], "next-page"),
+            Page([first, stale], "next-page"),
             Page([second], None),
         ]
 
@@ -245,6 +255,13 @@ class MlflowTrackerTests(unittest.TestCase):
                 for call in self.tracker.client.search_runs.call_args_list
             ],
             [100, 100],
+        )
+        self.assertEqual(
+            {
+                call.kwargs["filter_string"]
+                for call in self.tracker.client.search_runs.call_args_list
+            },
+            {"tags.`mlflow.parentRunId` = 'parent'"},
         )
 
     def test_episode_run_reuses_unique_child(self):
