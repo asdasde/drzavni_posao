@@ -58,8 +58,7 @@ export default function SearchSection({
           Koja je ono epizoda bila…?
         </h2>
         <p className="max-w-[576px] font-body text-lg leading-[1.55556] text-center text-neutral-600">
-          Opišite scenu svojim rečima — dobićete epizodu, tačan minutaž i
-          transkript kao dokaz.
+          Opišite scenu svojim rečima i pronađite epizodu koju tražite.
         </p>
       </div>
 

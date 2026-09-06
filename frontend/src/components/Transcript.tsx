@@ -27,7 +27,7 @@ export default function Transcript({ snippet, speakers }: TranscriptProps) {
   return (
     <div className="flex w-full flex-col bg-[#faf9f6] border-l-4 border-l-accent px-5 py-4 gap-4">
       <span className="font-mono text-[10px] uppercase tracking-[1.2px] text-neutral-500">
-        Transkript — dokaz
+        Transkript scene
       </span>
       <div className="flex flex-col gap-4">
         {turns.map((turn, index) => (
