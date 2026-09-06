@@ -14,7 +14,7 @@ from ...transcription.tracking import Stage
 from ...transcription.transcript import Transcript
 from ..common.io import write_jsonl
 from ..common.models import SegmentRecord
-from ..text import CHARACTER_DISPLAY_NAMES, normalize_text, semantic_text
+from ..text import CHARACTER_DISPLAY_NAMES, annotated_semantic_passage, normalize_text
 
 
 logger = logging.getLogger(__name__)
@@ -213,7 +213,6 @@ def build_records(
             speaker_keys = list(dict.fromkeys(keys))
             speakers = [CHARACTER_DISPLAY_NAMES[key] for key in speaker_keys]
             text_original = "\n".join(display_lines)
-            dense_text = " ".join([episode_meta.title, *speakers, *plain_lines])
             lexical_text = " ".join([episode_meta.title, *speaker_keys, *plain_lines])
             video_start = start + offset
             video_end = end + offset
@@ -228,7 +227,9 @@ def build_records(
                     video_start_seconds=video_start,
                     video_end_seconds=video_end,
                     text_original=text_original,
-                    text_semantic=semantic_text(dense_text),
+                    text_semantic=annotated_semantic_passage(
+                        episode_meta.title, speakers, plain_lines
+                    ),
                     text_normalized=normalize_text(lexical_text),
                     speaker_keys=speaker_keys,
                     source_segment_indices=source_indices,

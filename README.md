@@ -148,10 +148,13 @@ The corpus is built locally from a labeling export produced by
 `scripts/export_labeling_run.py`. Each episode uses the latest available stage
 transcript (`character_assigner`, then `diarization`, then `transcription`).
 It preserves original transcript evidence for display and derives normalized
-lexical and semantic fields for retrieval. The segmenter performs Serbian
-Cyrillic-to-Latin transliteration, whitespace cleanup, diacritic folding,
-controlled aliases, and overlapping, gap-aware chunks of up to eight source
-utterances and 60 seconds.
+lexical and semantic fields for retrieval. Semantic passages are tagged as
+`[Epizoda …] [Govore …]` plus dialogue so embeddings and the reranker see
+episode and speaker metadata separately from the spoken lines. Changing that
+format invalidates `artifacts/vector_index`; rebuild it after `dp-segment`.
+The segmenter performs Serbian Cyrillic-to-Latin transliteration, whitespace
+cleanup, diacritic folding, controlled aliases, and overlapping, gap-aware
+chunks of up to eight source utterances and 60 seconds.
 
 Video timestamps add `audio.trim_start` from the export's `config.json` unless
 `--source-time-offset` is set. Segment records therefore preserve both
@@ -336,7 +339,7 @@ A segment record contains provenance, retrieval fields, and both time bases:
   "video_end_seconds": 167.1,
   "youtube_url": "https://www.youtube.com/watch?v=REAL_ID",
   "text_original": "[Đorđe Čvarkov] ...",
-  "text_semantic": "Košarka Đorđe Čvarkov ...",
+  "text_semantic": "[Epizoda Košarka] [Govore Đorđe Čvarkov, Boškić] ...",
   "text_normalized": "kosarka cvarkov ...",
   "speaker_keys": ["cvarkov", "boskic"],
   "source_segment_indices": [42, 43, 44]

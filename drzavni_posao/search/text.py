@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 
 from ..transcription.constants import transliterate_serbian
 
@@ -57,6 +58,21 @@ def semantic_text(text: str) -> str:
     """Light normalization for multilingual embedding input."""
     value = transliterate_serbian(text)
     return _WHITESPACE_PATTERN.sub(" ", value).strip()
+
+
+def annotated_semantic_passage(
+    episode_title: str,
+    speakers: Sequence[str],
+    dialogue_lines: Sequence[str],
+) -> str:
+    """Embeddable passage with explicit episode and speaker tags."""
+    parts = [f"[Epizoda {episode_title}]"]
+    if speakers:
+        parts.append(f"[Govore {', '.join(speakers)}]")
+    dialogue = " ".join(line.strip() for line in dialogue_lines if line.strip())
+    if dialogue:
+        parts.append(dialogue)
+    return semantic_text(" ".join(parts))
 
 
 def basic_tokens(text: str) -> list[str]:

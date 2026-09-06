@@ -301,6 +301,11 @@ class SegmentationTests(unittest.TestCase):
             self.assertIn("ЉУБАВ", segment.text_original)
             self.assertIn("ljubav", segment.text_normalized)
             self.assertEqual(segment.speaker_keys, ["boskic", "cvarkov"])
+            self.assertTrue(
+                segment.text_semantic.startswith(
+                    "[Epizoda Rakija] [Govore Boškić, Đorđe Čvarkov]"
+                )
+            )
             self.assertEqual(segment.video_start_seconds, 26.0)
             self.assertEqual(segment.video_start_time, "00:00:26")
 
