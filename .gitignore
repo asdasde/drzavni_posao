@@ -20,6 +20,9 @@ wheels/
 artifacts/
 data/*
 !data/youtube_episodes.json
+!data/evaluation_queries.jsonl
+!data/evaluation_queries_expansion.jsonl
+!data/evaluation_queries_tiktok.jsonl
 downloads/
 mlruns/
 transcripts/
