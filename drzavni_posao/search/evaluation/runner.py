@@ -50,7 +50,7 @@ class EvaluationQuery:
     query_id: str
     query: str
     relevant_youtube_video_id: str
-    tiktok_url: str
+    tiktok_url: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -263,9 +263,11 @@ def load_evaluation_queries(path: Path) -> list[EvaluationQuery]:
             raise ValueError(
                 f"Evaluation query {query_id} needs relevant_youtube_video_id"
             )
-        tiktok_url = str(row.get("tiktok_url") or "").strip()
-        if not tiktok_url.startswith("https://www.tiktok.com/"):
-            raise ValueError(f"Evaluation query {query_id} needs a public TikTok URL")
+        tiktok_url = str(row.get("tiktok_url") or "").strip() or None
+        if tiktok_url is not None and not tiktok_url.startswith(
+            "https://www.tiktok.com/"
+        ):
+            raise ValueError(f"Evaluation query {query_id} has an invalid TikTok URL")
         queries.append(
             EvaluationQuery(
                 query_id=query_id,

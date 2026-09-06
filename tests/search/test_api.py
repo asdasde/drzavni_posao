@@ -71,6 +71,18 @@ class SearchApiTests(unittest.TestCase):
         patcher = patch.object(api_app, "load_engine", self.load_engine)
         patcher.start()
         self.addCleanup(patcher.stop)
+        self.episodes = [
+            {
+                "youtube_video_id": "abc",
+                "episode_number": 1,
+                "episode_title": "Izbori",
+            }
+        ]
+        episode_patcher = patch.object(
+            api_app, "evaluation_episodes", return_value=self.episodes
+        )
+        episode_patcher.start()
+        self.addCleanup(episode_patcher.stop)
 
     def _patch_vector_path(self, exists: bool) -> None:
         directory = tempfile.mkdtemp()
@@ -168,6 +180,39 @@ class SearchApiTests(unittest.TestCase):
         )
         self.assertIsInstance(payload["episodes"], int)
         self.assertIsInstance(payload["segments"], int)
+
+    def test_lists_evaluation_episode_options(self) -> None:
+        response = self.client.get("/evaluation/episodes")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"episodes": self.episodes})
+
+    def test_adds_manual_evaluation_query(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            queries_path = Path(temporary) / "queries.jsonl"
+            with patch.object(api_app, "EVALUATION_QUERIES_PATH", queries_path):
+                response = self.client.post(
+                    "/evaluation/queries",
+                    json={
+                        "query": "epizoda o izborima",
+                        "youtube_video_id": "abc",
+                    },
+                )
+
+            self.assertEqual(response.status_code, 200)
+            payload = response.json()
+            self.assertTrue(payload["query_id"].startswith("manual_"))
+            self.assertEqual(payload["episode_title"], "Izbori")
+            self.assertNotIn("tiktok_url", queries_path.read_text())
+
+    def test_rejects_unknown_evaluation_episode(self) -> None:
+        response = self.client.post(
+            "/evaluation/queries",
+            json={
+                "query": "nepoznata epizoda",
+                "youtube_video_id": "missing",
+            },
+        )
+        self.assertEqual(response.status_code, 404)
 
 
 if __name__ == "__main__":

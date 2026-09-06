@@ -63,7 +63,7 @@ class EvaluationTests(unittest.TestCase):
             ],
         )
 
-    def test_tiktok_query_loader_requires_lineage_url(self) -> None:
+    def test_query_loader_accepts_manual_query_without_lineage_url(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / "queries.jsonl"
             path.write_text(
@@ -77,8 +77,9 @@ class EvaluationTests(unittest.TestCase):
                 + "\n",
                 encoding="utf-8",
             )
-            with self.assertRaisesRegex(ValueError, "public TikTok URL"):
-                load_evaluation_queries(path)
+            queries = load_evaluation_queries(path)
+
+        self.assertIsNone(queries[0].tiktok_url)
 
     def test_evaluation_manifest_captures_configuration_and_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
