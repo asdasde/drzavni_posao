@@ -8,7 +8,7 @@ from drzavni_posao.generation.dataset import (
     build_pair,
     select_splits,
 )
-from drzavni_posao.transcript import Transcript
+from drzavni_posao.transcription.transcript import Transcript
 
 
 class GenerationDatasetTests(unittest.TestCase):

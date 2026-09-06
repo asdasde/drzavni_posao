@@ -8,10 +8,10 @@ import re
 from pathlib import Path
 from typing import Any
 
-from ...episode import Episode
-from ...store import DEFAULT_CATALOG_PATH, MediaStore
-from ...tracking import Stage
-from ...transcript import Transcript
+from ...transcription.episode import Episode
+from ...transcription.store import DEFAULT_CATALOG_PATH, MediaStore
+from ...transcription.tracking import Stage
+from ...transcription.transcript import Transcript
 from ..common.io import write_jsonl
 from ..common.models import SegmentRecord
 from ..text import CHARACTER_DISPLAY_NAMES, normalize_text, semantic_text

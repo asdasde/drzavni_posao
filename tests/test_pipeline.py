@@ -5,12 +5,12 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from drzavni_posao.character_assigner import CharacterAssignerConfig
-from drzavni_posao.diarizer import DiarizerConfig
-from drzavni_posao.embedder import EmbedderConfig
-from drzavni_posao.pipeline import PipelineConfig, run_pipeline
-from drzavni_posao.tracking import Stage, configuration_id
-from drzavni_posao.transcriber import TranscriberConfig
+from drzavni_posao.transcription.character_assigner import CharacterAssignerConfig
+from drzavni_posao.transcription.diarizer import DiarizerConfig
+from drzavni_posao.transcription.embedder import EmbedderConfig
+from drzavni_posao.transcription.pipeline import PipelineConfig, run_pipeline
+from drzavni_posao.transcription.tracking import Stage, configuration_id
+from drzavni_posao.transcription.transcriber import TranscriberConfig
 
 
 class PipelineConfigTests(unittest.TestCase):
@@ -129,15 +129,15 @@ class PipelineExecutionTests(unittest.TestCase):
         tracker = self.tracker((Stage.TRANSCRIPTION,))
 
         with (
-            patch("drzavni_posao.pipeline.Transcriber") as transcriber_type,
-            patch("drzavni_posao.pipeline.Diarizer") as diarizer_type,
-            patch("drzavni_posao.pipeline.CharacterAssigner") as assigner_type,
+            patch("drzavni_posao.transcription.pipeline.Transcriber") as transcriber_type,
+            patch("drzavni_posao.transcription.pipeline.Diarizer") as diarizer_type,
+            patch("drzavni_posao.transcription.pipeline.CharacterAssigner") as assigner_type,
             patch(
-                "drzavni_posao.pipeline.alignment_metrics",
+                "drzavni_posao.transcription.pipeline.alignment_metrics",
                 return_value={"aligned": 1},
             ),
             patch(
-                "drzavni_posao.pipeline.repetition_metrics",
+                "drzavni_posao.transcription.pipeline.repetition_metrics",
                 return_value={"repeated": 2},
             ),
         ):
@@ -182,10 +182,10 @@ class PipelineExecutionTests(unittest.TestCase):
         tracker = self.tracker((Stage.CHARACTER_ASSIGNER,), state)
 
         with (
-            patch("drzavni_posao.pipeline.Transcriber") as transcriber_type,
-            patch("drzavni_posao.pipeline.CharacterAssigner") as assigner_type,
+            patch("drzavni_posao.transcription.pipeline.Transcriber") as transcriber_type,
+            patch("drzavni_posao.transcription.pipeline.CharacterAssigner") as assigner_type,
             patch(
-                "drzavni_posao.pipeline.assignment_metrics",
+                "drzavni_posao.transcription.pipeline.assignment_metrics",
                 return_value={"named": 1},
             ),
         ):

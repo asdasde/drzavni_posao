@@ -266,4 +266,3 @@ def assignment_scores(labeled_segments: pd.DataFrame) -> dict[str, float]:
         for name, value in scores.items()
         if value is not None
     }
-

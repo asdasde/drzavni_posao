@@ -7,9 +7,9 @@ from unittest.mock import MagicMock
 
 import mlflow
 
-import drzavni_posao
-from drzavni_posao import tracking
-from drzavni_posao.pipeline import PipelineConfig
+from drzavni_posao import transcription
+from drzavni_posao.transcription import tracking
+from drzavni_posao.transcription.pipeline import PipelineConfig
 
 Stage = tracking.Stage
 
@@ -70,10 +70,10 @@ class MlflowTrackerTests(unittest.TestCase):
         diar_model="diar-a",
         character_assigner_threshold=0.5,
     ):
-        from drzavni_posao.character_assigner import CharacterAssignerConfig
-        from drzavni_posao.diarizer import DiarizerConfig
-        from drzavni_posao.embedder import EmbedderConfig
-        from drzavni_posao.transcriber import TranscriberConfig
+        from drzavni_posao.transcription.character_assigner import CharacterAssignerConfig
+        from drzavni_posao.transcription.diarizer import DiarizerConfig
+        from drzavni_posao.transcription.embedder import EmbedderConfig
+        from drzavni_posao.transcription.transcriber import TranscriberConfig
 
         return {
             "audio": {
@@ -104,11 +104,11 @@ class MlflowTrackerTests(unittest.TestCase):
         )
 
     def test_tracker_is_exported_from_package(self):
-        self.assertIs(drzavni_posao.MlflowTracker, tracking.MlflowTracker)
+        self.assertIs(transcription.MlflowTracker, tracking.MlflowTracker)
 
     def test_stage_enum_follows_pipeline_order(self):
         self.assertTrue(hasattr(tracking, "Stage"))
-        self.assertIs(drzavni_posao.Stage, tracking.Stage)
+        self.assertIs(transcription.Stage, tracking.Stage)
         self.assertIs(
             tracking.Stage.TRANSCRIPTION.next,
             tracking.Stage.DIARIZATION,

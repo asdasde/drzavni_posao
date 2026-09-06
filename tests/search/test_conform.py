@@ -4,15 +4,15 @@ import unittest
 import unicodedata
 from pathlib import Path
 
-from drzavni_posao.episode import Episode, EpisodeCatalog, EpisodeMetadata
+from drzavni_posao.transcription.episode import Episode, EpisodeCatalog, EpisodeMetadata
 from drzavni_posao.search.conform.pipeline import (
     build_records,
     chunk_raw_segments,
     load_episodes_from_mlflow_export,
     source_time_offset_from_export,
 )
-from drzavni_posao.store import MediaStore
-from drzavni_posao.transcript import Transcript
+from drzavni_posao.transcription.store import MediaStore
+from drzavni_posao.transcription.transcript import Transcript
 
 
 def raw_segment(

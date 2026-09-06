@@ -3,8 +3,8 @@ from unittest.mock import MagicMock, patch
 
 import numpy as np
 
-from drzavni_posao.constants import SR
-from drzavni_posao.transcriber import (
+from drzavni_posao.transcription.constants import SR
+from drzavni_posao.transcription.transcriber import (
     Transcriber,
     TranscriberConfig,
     is_collapsed,
@@ -218,7 +218,7 @@ class VadRealignmentTests(unittest.TestCase):
         }
 
         with patch(
-            "drzavni_posao.transcriber.whisperx.align",
+            "drzavni_posao.transcription.transcriber.whisperx.align",
             side_effect=[first_alignment, second_alignment],
         ) as align:
             transcriber.run(episode)

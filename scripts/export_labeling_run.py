@@ -32,7 +32,7 @@ from pathlib import Path
 
 from mlflow.tracking import MlflowClient
 
-from drzavni_posao.tracking import MlflowTracker, Stage
+from drzavni_posao.transcription.tracking import MlflowTracker, Stage
 
 DEFAULT_WORKERS = 4
 

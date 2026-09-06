@@ -3,8 +3,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from drzavni_posao.comparison import compare, load_transcripts, scribe_to_transcript
-from drzavni_posao.transcript import Transcript
+from drzavni_posao.transcription.comparison import compare, load_transcripts, scribe_to_transcript
+from drzavni_posao.transcription.transcript import Transcript
 
 
 class ComparisonTranscriptTests(unittest.TestCase):

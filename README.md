@@ -87,8 +87,8 @@ then call `run_pipeline`:
 ```python
 from pathlib import Path
 
-from drzavni_posao import MediaStore, MlflowTracker, PipelineConfig
-from drzavni_posao import TranscriberConfig, run_pipeline
+from drzavni_posao.transcription import MediaStore, MlflowTracker, PipelineConfig
+from drzavni_posao.transcription import TranscriberConfig, run_pipeline
 
 media = MediaStore(
     audio_dir=Path("audio"),
@@ -343,11 +343,22 @@ A segment record contains provenance, retrieval fields, and both time bases:
 
 ```text
 drzavni_posao/
-  pipeline.py               # orchestration API
-  tracking.py               # MLflow parent/episode tracking
-  transcriber.py            # WhisperX ASR and alignment
-  diarizer.py               # pyannote speaker diarization
-  character_assigner.py     # voice-gallery character labels
+  transcription/
+    pipeline.py             # orchestration API
+    tracking.py             # MLflow parent/episode tracking
+    transcriber.py          # WhisperX ASR and alignment
+    diarizer.py             # pyannote speaker diarization
+    character_assigner.py   # voice-gallery character labels
+    comparison.py           # transcript comparison and alignment metrics
+    constants.py            # shared transcription constants
+    embedder.py             # speaker embeddings
+    episode.py              # episode metadata and catalogs
+    evaluation.py           # evaluation helpers
+    gallery.py              # speaker sample galleries
+    metrics.py              # transcription and assignment metrics
+    store.py                # media and artifact storage
+    transcript.py           # transcript model
+    vad_realigner.py         # VAD boundary realignment
   search/
     conform/                # transcript JSON -> corpus records
     indexing/               # BM25 and vector artifacts

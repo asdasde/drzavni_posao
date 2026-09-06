@@ -2,7 +2,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock
 
-from drzavni_posao.character_assigner import CharacterAssigner
+from drzavni_posao.transcription.character_assigner import CharacterAssigner
 
 
 class CharacterAssignerTests(unittest.TestCase):

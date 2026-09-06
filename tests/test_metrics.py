@@ -1,6 +1,6 @@
 import unittest
 
-from drzavni_posao.metrics import (
+from drzavni_posao.transcription.metrics import (
     UNCOVERED_LABEL,
     assignment_scores,
     character_table,

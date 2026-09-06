@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 
-from ..constants import transliterate_serbian
+from ..transcription.constants import transliterate_serbian
 
 DIACRITIC_FOLD = str.maketrans(
     {

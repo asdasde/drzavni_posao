@@ -1,6 +1,6 @@
 import unittest
 
-from drzavni_posao.vad_realigner import (
+from drzavni_posao.transcription.vad_realigner import (
     Segment,
     VadRealigner,
     VadRegion,

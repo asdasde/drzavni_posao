@@ -7,12 +7,12 @@ from types import SimpleNamespace
 import mlflow
 import pandas as pd
 
-from drzavni_posao import evaluation
-from drzavni_posao.character_assigner import CharacterAssignerConfig
-from drzavni_posao.embedder import EmbedderConfig
-from drzavni_posao.pipeline import PipelineConfig
-from drzavni_posao.tracking import MlflowTracker, Stage
-from drzavni_posao.transcriber import TranscriberConfig
+from drzavni_posao.transcription import evaluation
+from drzavni_posao.transcription.character_assigner import CharacterAssignerConfig
+from drzavni_posao.transcription.embedder import EmbedderConfig
+from drzavni_posao.transcription.pipeline import PipelineConfig
+from drzavni_posao.transcription.tracking import MlflowTracker, Stage
+from drzavni_posao.transcription.transcriber import TranscriberConfig
 
 CONFIGURATION = PipelineConfig(
     trim_start=25,

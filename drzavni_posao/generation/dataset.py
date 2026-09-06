@@ -6,9 +6,9 @@ from typing import Any
 
 from datasets import Dataset, DatasetDict
 
-from ..constants import ANONYMOUS_LABEL, CORE_CHARACTERS
-from ..episode import Episode
-from ..transcript import Transcript
+from ..transcription.constants import ANONYMOUS_LABEL, CORE_CHARACTERS
+from ..transcription.episode import Episode
+from ..transcription.transcript import Transcript
 from .prompt import build_episode_messages
 
 
