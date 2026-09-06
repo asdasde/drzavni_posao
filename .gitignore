@@ -46,6 +46,7 @@ mlflow.db
 !notebooks/screenplay-pilot-qlora-episode-losses.ipynb
 scripts/export_labeling_run.py
 .isaac/
+docs/whitepaper/
 
 # Frontend
 node_modules/
