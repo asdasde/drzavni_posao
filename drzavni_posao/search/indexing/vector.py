@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 VECTOR_INDEX_VERSION = 1
 # Version 2 predates the version reset and uses the same binary schema.
 SUPPORTED_VECTOR_INDEX_VERSIONS = {VECTOR_INDEX_VERSION, 2}
-DEFAULT_MODEL = "intfloat/multilingual-e5-base"
+DEFAULT_MODEL = "djovak/embedic-large"
 Float32Array = NDArray[np.float32]
 
 
@@ -403,7 +403,7 @@ def main() -> None:
         description="Build an exact cosine index for multilingual text embeddings"
     )
     parser.add_argument("--segments", type=Path, default=Path("data/segments.jsonl"))
-    parser.add_argument("--output", type=Path, default=Path("artifacts/vector_index"))
+    parser.add_argument("--output", type=Path, default=Path("artifacts/vector_embedic"))
     parser.add_argument("--model", default=DEFAULT_MODEL)
     parser.add_argument(
         "--model-revision",

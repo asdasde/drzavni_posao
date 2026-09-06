@@ -15,7 +15,7 @@ RUN uv sync --frozen --no-dev --extra search --extra api
 
 # Runtime is local_models_only=True, so bake the dense encoder (and reranker)
 # into the image's HF cache while the build still has network access.
-ARG DENSE_MODEL=intfloat/multilingual-e5-base
+ARG DENSE_MODEL=djovak/embedic-large
 ARG RERANKER_MODEL=cross-encoder/mmarco-mMiniLMv2-L12-H384-v1
 RUN uv run python -c "\
 from sentence_transformers import SentenceTransformer, CrossEncoder; \

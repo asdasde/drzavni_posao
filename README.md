@@ -151,7 +151,7 @@ It preserves original transcript evidence for display and derives normalized
 lexical and semantic fields for retrieval. Semantic passages are tagged as
 `[Epizoda …] [Govore …]` plus dialogue so embeddings and the reranker see
 episode and speaker metadata separately from the spoken lines. Changing that
-format invalidates `artifacts/vector_index`; rebuild it after `dp-segment`.
+format invalidates `artifacts/vector_embedic`; rebuild it after `dp-segment`.
 The segmenter performs Serbian Cyrillic-to-Latin transliteration, whitespace
 cleanup, diacritic folding, controlled aliases, and overlapping, gap-aware
 chunks of up to eight source utterances and 60 seconds.
@@ -182,8 +182,8 @@ with an explicit model-download opt-in:
 ```bash
 uv run --extra search dp-build-vectors \
   --segments data/segments.jsonl \
-  --output artifacts/vector_index \
-  --model intfloat/multilingual-e5-base \
+  --output artifacts/vector_embedic \
+  --model djovak/embedic-large \
   --allow-download
 ```
 
@@ -216,7 +216,7 @@ Hybrid search combines BM25 candidates, multilingual dense candidates, and
 character evidence:
 
 ```bash
-uv run --extra search dp-search "the election argument" --method hybrid --vectors artifacts/vector_index
+uv run --extra search dp-search "the election argument" --method hybrid --vectors artifacts/vector_embedic
 ```
 
 Use `--json` for machine-readable results, `--top-k` to control result count,
@@ -253,7 +253,7 @@ uv run dp-serve   # 0.0.0.0:8000, override with DP_API_PORT
 (`bm25` only until the vector index is built).
 
 The API reads `data/segments.jsonl`, `artifacts/bm25_index.json`, and
-`artifacts/vector_index` by default. Override those locations with
+`artifacts/vector_embedic` by default. Override those locations with
 `DP_SEGMENTS_PATH`, `DP_BM25_PATH`, and `DP_VECTOR_PATH`. `DP_DEVICE` selects the
 compute device; `DP_RERANKER_MODEL` and `DP_RERANKER_REVISION` select the reranker.
 Models load from the local cache when their search method is requested.
@@ -289,14 +289,21 @@ http://localhost:8080 (`frontend/Dockerfile`, nginx proxying `/search` and
 
 ## Evaluation
 
-The benchmark contains 55 real viewer questions extracted from public TikTok
-reply videos. Each query has one relevant YouTube episode and retains the
-public TikTok URL that establishes its lineage. Evaluation ranks episodes, not
-transcript windows.
+The development benchmark contains 87 episode-search queries: 55 real viewer
+questions extracted from public TikTok reply videos and 32 manually authored
+cases. Every query has one relevant YouTube episode; organic rows retain the
+public TikTok URL that establishes their lineage. Evaluation ranks episodes,
+not transcript windows.
 
 ```bash
-uv run --extra search dp-evaluate --queries data/evaluation_queries_tiktok.jsonl --segments data/segments.jsonl --bm25 artifacts/bm25_index.json --vectors artifacts/vector_index --methods bm25,dense,hybrid --output artifacts/evaluation_results_tiktok.json
+uv run --extra search dp-evaluate --queries data/evaluation_queries_tiktok.jsonl --segments data/segments.jsonl --bm25 artifacts/bm25_index.json --vectors artifacts/vector_embedic --methods bm25,dense,hybrid,hybrid_rerank --warmup --output artifacts/evaluation_results.json
 ```
+
+On the current 87-query development set, Embedić hybrid + reranker reaches
+Recall@5 `0.770`, MRR@10 `0.630`, and nDCG@10 `0.673`. The reranked embedding
+models are statistically indistinguishable on this sample. The 32 manually
+authored cases are substantially easier than the organic subset, so do not
+present the combined score as an unbiased production estimate.
 
 The reported metrics are:
 
@@ -320,8 +327,9 @@ state. Outputs remain generated artifacts under `artifacts/`; do not commit
 them. Publish benchmark results to MLflow, object storage, or another artifact
 store when they need to be shared.
 
-Each per-query result and checkpoint repeats its `tiktok_url`, so a reported
-success or failure can be traced back to the source question.
+Each organic per-query result and checkpoint repeats its `tiktok_url`, so a
+reported success or failure can be traced back to the source question. Manual
+rows have no source URL and use a deterministic `manual_…` query ID.
 
 ## Data contracts
 

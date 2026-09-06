@@ -26,7 +26,7 @@ from drzavni_posao.search.retrieval.rerank import (
 
 SEGMENTS_PATH = Path(os.environ.get("DP_SEGMENTS_PATH", "data/segments.jsonl"))
 BM25_PATH = Path(os.environ.get("DP_BM25_PATH", "artifacts/bm25_index.json"))
-VECTOR_PATH = Path(os.environ.get("DP_VECTOR_PATH", "artifacts/vector_index"))
+VECTOR_PATH = Path(os.environ.get("DP_VECTOR_PATH", "artifacts/vector_embedic"))
 RERANKER_MODEL = os.environ.get("DP_RERANKER_MODEL", DEFAULT_RERANKER_MODEL)
 RERANKER_REVISION = os.environ.get("DP_RERANKER_REVISION")
 TORCH_DEVICE = resolve_torch_device(os.environ.get("DP_DEVICE", "auto"))
