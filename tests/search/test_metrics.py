@@ -1,19 +1,17 @@
 import json
 import math
 import tempfile
+from pathlib import Path
 from types import SimpleNamespace
 import unittest
-from pathlib import Path
 
 from drzavni_posao.search.evaluation.runner import (
     EvaluationQuery,
-    Judgment,
     build_argument_parser,
     build_evaluation_manifest,
     calculate_query_metrics,
     evaluate_method,
     load_evaluation_queries,
-    relevance_grades,
 )
 from drzavni_posao.search.retrieval.fusion import HybridWeights
 from drzavni_posao.search.retrieval.models import SearchResult
@@ -21,12 +19,10 @@ from drzavni_posao.search.retrieval.models import SearchResult
 from .test_engine import make_segment
 
 
-def result(
-    rank: int, segment_id: str, youtube_video_id: str, start: float
-) -> SearchResult:
+def result(rank: int, segment_id: str, youtube_video_id: str) -> SearchResult:
     return SearchResult(
         rank=rank,
-        segment=make_segment(segment_id, youtube_video_id, "text", start=start),
+        segment=make_segment(segment_id, youtube_video_id, "text"),
         score=1 / rank,
         score_components={},
         matched_characters=[],
@@ -40,32 +36,48 @@ class EvaluationTests(unittest.TestCase):
         self.assertEqual(args.methods, "bm25")
         self.assertIsNone(args.vectors)
         self.assertEqual(args.queries, Path("queries.jsonl"))
-        self.assertEqual(args.relevance_level, "segment")
+        self.assertFalse(hasattr(args, "relevance_level"))
+        self.assertFalse(hasattr(args, "additional_queries"))
 
-    def test_evaluate_cli_accepts_episode_relevance(self) -> None:
-        args = build_argument_parser().parse_args(
-            ["--queries", "queries.jsonl", "--relevance-level", "episode"]
+    def test_tiktok_query_loader_keeps_lineage(self) -> None:
+        row = {
+            "query_id": "tt_1",
+            "query": "ona epizoda sa jubilejom",
+            "relevant_youtube_video_id": "e1",
+            "tiktok_url": "https://www.tiktok.com/@viewer/video/1",
+        }
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "queries.jsonl"
+            path.write_text(json.dumps(row) + "\n", encoding="utf-8")
+            queries = load_evaluation_queries(path)
+
+        self.assertEqual(
+            queries,
+            [
+                EvaluationQuery(
+                    query_id="tt_1",
+                    query="ona epizoda sa jubilejom",
+                    relevant_youtube_video_id="e1",
+                    tiktok_url="https://www.tiktok.com/@viewer/video/1",
+                )
+            ],
         )
-        self.assertEqual(args.relevance_level, "episode")
 
-    def test_episode_only_judgment_parses_only_in_episode_mode(self) -> None:
+    def test_tiktok_query_loader_requires_lineage_url(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / "queries.jsonl"
             path.write_text(
                 json.dumps(
                     {
-                        "query_id": "q1",
-                        "query": "ona epizoda sa jubilejom",
-                        "judgments": [{"youtube_video_id": "e1"}],
+                        "query_id": "tt_1",
+                        "query": "query",
+                        "relevant_youtube_video_id": "e1",
                     }
                 )
                 + "\n",
                 encoding="utf-8",
             )
-
-            episode_queries = load_evaluation_queries(path, relevance_level="episode")
-            self.assertEqual(episode_queries[0].judgments, (Judgment("e1"),))
-            with self.assertRaisesRegex(ValueError, "A segment-level judgment needs"):
+            with self.assertRaisesRegex(ValueError, "public TikTok URL"):
                 load_evaluation_queries(path)
 
     def test_evaluation_manifest_captures_configuration_and_artifacts(self) -> None:
@@ -102,25 +114,22 @@ class EvaluationTests(unittest.TestCase):
                 dense_device="cpu",
                 local_models_only=True,
             )
-
             manifest = build_evaluation_manifest(
                 engine=engine,
                 methods=["bm25", "hybrid_rerank"],
                 queries=[
                     EvaluationQuery(
-                        query_id="q1",
-                        query="scene query",
-                        judgments=(Judgment("e1", 25, 45),),
+                        "q1",
+                        "episode query",
+                        "e1",
+                        "https://www.tiktok.com/@viewer/video/1",
                     )
                 ],
-                query_files=[query_path],
+                query_file=query_path,
                 segments_path=segments_path,
                 bm25_path=bm25_path,
                 vector_path=vector_path,
-                split="test",
-                ranking_unit="segment",
                 candidate_k=50,
-                tolerance_seconds=2.0,
                 bootstrap_samples=1000,
                 warmup=True,
                 weights=HybridWeights(),
@@ -129,9 +138,9 @@ class EvaluationTests(unittest.TestCase):
         self.assertEqual(manifest["schema_version"], 1)
         self.assertEqual(manifest["models"]["vector"]["revision"], "dense-commit")
         self.assertEqual(manifest["models"]["reranker"]["revision"], "reranker-commit")
+        self.assertEqual(manifest["evaluation"]["ranking_unit"], "episode")
         self.assertEqual(manifest["evaluation"]["top_k"], 10)
         self.assertEqual(manifest["evaluation"]["rerank_k"], 50)
-        self.assertEqual(manifest["evaluation"]["relevance_level"], "segment")
         self.assertEqual(manifest["data"]["query_count"], 1)
         self.assertEqual(len(manifest["data"]["query_set_fingerprint"]), 64)
         self.assertEqual(len(manifest["data"]["corpus_fingerprint"]), 64)
@@ -147,80 +156,39 @@ class EvaluationTests(unittest.TestCase):
             manifest["artifacts"]["vector_index"]["vectors"]["size_bytes"], 4
         )
         self.assertEqual(
-            manifest["artifacts"]["queries"][0]["sha256"],
+            manifest["artifacts"]["queries"]["sha256"],
             "f2c527db2ab8602e4a44ea2e24db69d9b1848236868c9039a7207850d1166e37",
         )
         self.assertEqual(len(manifest["artifacts"]["segments"]["sha256"]), 64)
         self.assertIn("commit", manifest["software"]["git"])
 
-    def test_single_relevant_at_rank_three(self) -> None:
-        results = [
-            result(1, "a", "e1", 0),
-            result(2, "b", "e2", 0),
-            result(3, "c", "e3", 30),
-        ]
-        judgments = (
-            Judgment(
-                youtube_video_id="e3",
-                start_seconds=55,
-                end_seconds=75,
-                time_reference="video",
-            ),
+    def test_single_relevant_episode_at_rank_three(self) -> None:
+        metrics = calculate_query_metrics(
+            [
+                result(1, "a", "e1"),
+                result(2, "b", "e2"),
+                result(3, "c", "e3"),
+            ],
+            "e3",
         )
-        metrics = calculate_query_metrics(results, judgments)
         self.assertEqual(metrics.recall_at_5, 1.0)
         self.assertAlmostEqual(metrics.reciprocal_rank_at_10, 1 / 3)
         self.assertAlmostEqual(metrics.ndcg_at_10, 1 / math.log2(4))
 
-    def test_absent_relevant_scene_scores_zero(self) -> None:
-        judgments = (
-            Judgment(
-                "missing", start_seconds=0, end_seconds=10, time_reference="transcript"
-            ),
-        )
-        metrics = calculate_query_metrics([result(1, "a", "e1", 0)], judgments)
+    def test_absent_relevant_episode_scores_zero(self) -> None:
+        metrics = calculate_query_metrics([result(1, "a", "e1")], "missing")
         self.assertEqual(metrics.recall_at_5, 0.0)
         self.assertEqual(metrics.reciprocal_rank_at_10, 0.0)
         self.assertEqual(metrics.ndcg_at_10, 0.0)
 
-    def test_overlapping_duplicate_results_cannot_reuse_one_judgment(self) -> None:
-        results = [result(1, "a", "e1", 0), result(2, "b", "e1", 5)]
-        judgments = (
-            Judgment("e1", start_seconds=25, end_seconds=45, time_reference="video"),
-        )
-        grades, matched = relevance_grades(results, judgments)
-        self.assertEqual(grades, [1, 0])
-        self.assertEqual(matched, {0})
-
-    def test_graded_judgments_use_ideal_order(self) -> None:
-        results = [result(1, "a", "e1", 0), result(2, "b", "e2", 0)]
-        judgments = (
-            Judgment("e1", 25, 45, grade=1, time_reference="video"),
-            Judgment("e2", 25, 45, grade=2, time_reference="video"),
-        )
-        metrics = calculate_query_metrics(results, judgments)
-        expected = (1 + 3 / math.log2(3)) / (3 + 1 / math.log2(3))
-        self.assertAlmostEqual(metrics.ndcg_at_10, expected)
-
-    def test_episode_relevance_matches_video_id_without_scene_overlap(self) -> None:
-        judgments = (Judgment("e1"),)
+    def test_duplicate_segments_do_not_consume_episode_ranks(self) -> None:
         metrics = calculate_query_metrics(
-            [result(1, "far-away-scene", "e1", 5000)],
-            judgments,
-            relevance_level="episode",
-        )
-        self.assertEqual(metrics.recall_at_5, 1.0)
-        self.assertEqual(metrics.reciprocal_rank_at_10, 1.0)
-        self.assertEqual(metrics.ndcg_at_10, 1.0)
-
-    def test_episode_metrics_collapse_duplicate_segments_before_ranking(self) -> None:
-        results = [
-            result(1, "e1-a", "e1", 0),
-            result(2, "e1-b", "e1", 100),
-            result(3, "e2-a", "e2", 0),
-        ]
-        metrics = calculate_query_metrics(
-            results, (Judgment("e2"),), relevance_level="episode"
+            [
+                result(1, "e1-a", "e1"),
+                result(2, "e1-b", "e1"),
+                result(3, "e2-a", "e2"),
+            ],
+            "e2",
         )
         self.assertEqual(metrics.recall_at_5, 1.0)
         self.assertEqual(metrics.reciprocal_rank_at_10, 0.5)
@@ -235,44 +203,36 @@ class EvaluationTests(unittest.TestCase):
 
             def search(self, *_args, **_kwargs):
                 self.calls += 1
-                return [result(1, "s1", "e1", 0)]
+                return [result(1, "s1", "e1")]
 
         queries = [
-            EvaluationQuery(f"q{index}", f"query {index}", (Judgment("e1"),))
+            EvaluationQuery(
+                f"q{index}",
+                f"query {index}",
+                "e1",
+                f"https://www.tiktok.com/@viewer/video/{index}",
+            )
             for index in (1, 2)
         ]
         engine = FakeEngine()
         with tempfile.TemporaryDirectory() as temporary:
             checkpoint = Path(temporary) / "checkpoint.jsonl"
-
-            first = evaluate_method(
-                engine,
-                queries,
-                "bm25",
-                relevance_level="episode",
-                checkpoint_path=checkpoint,
-            )
+            first = evaluate_method(engine, queries, "bm25", checkpoint_path=checkpoint)
             second = evaluate_method(
-                engine,
-                queries,
-                "bm25",
-                relevance_level="episode",
-                checkpoint_path=checkpoint,
+                engine, queries, "bm25", checkpoint_path=checkpoint
             )
 
-            self.assertEqual(len(checkpoint.read_text().splitlines()), 2)
+            rows = [
+                json.loads(line)
+                for line in checkpoint.read_text(encoding="utf-8").splitlines()
+            ]
+            self.assertEqual(len(rows), 2)
+            self.assertEqual(
+                rows[0]["tiktok_url"],
+                "https://www.tiktok.com/@viewer/video/1",
+            )
         self.assertEqual(engine.calls, 2)
         self.assertEqual(first.to_dict(), second.to_dict())
-
-    def test_episode_metrics_collapse_duplicate_judgments(self) -> None:
-        metrics = calculate_query_metrics(
-            [result(1, "e1-a", "e1", 0)],
-            (Judgment("e1", grade=1), Judgment("e1", grade=2)),
-            relevance_level="episode",
-        )
-        self.assertEqual(metrics.recall_at_5, 1.0)
-        self.assertEqual(metrics.reciprocal_rank_at_10, 1.0)
-        self.assertEqual(metrics.ndcg_at_10, 1.0)
 
 
 if __name__ == "__main__":

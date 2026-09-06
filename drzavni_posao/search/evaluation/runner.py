@@ -15,12 +15,11 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 from ..common.device import resolve_torch_device
 from ..common.fingerprints import segment_corpus_fingerprint
 from ..common.io import read_jsonl, write_json
-from ..common.models import SegmentRecord
 from ..indexing.vector import VectorIndex
 from ..retrieval.engine import (
     OVERLAP_DEDUPLICATION_THRESHOLD,
@@ -36,8 +35,6 @@ from ..retrieval.rerank import CrossEncoderReranker, DEFAULT_RERANKER_MODEL
 
 logger = logging.getLogger(__name__)
 
-TimeReference = Literal["transcript", "video"]
-RelevanceLevel = Literal["segment", "episode"]
 EVALUATION_TOP_K = 10
 EVALUATION_RERANK_K = 50
 BOOTSTRAP_CONFIDENCE = 0.95
@@ -48,42 +45,12 @@ BOOTSTRAP_SEEDS = {
 }
 
 
-def parse_timestamp(value: str | int | float | None) -> float | None:
-    if value is None:
-        return None
-    if isinstance(value, (int, float)):
-        return float(value)
-    parts = value.strip().split(":")
-    if not parts or any(not part.replace(".", "", 1).isdigit() for part in parts):
-        raise ValueError(f"Invalid timestamp: {value!r}")
-    numbers = [float(part) for part in parts]
-    if len(numbers) == 3:
-        return numbers[0] * 3600 + numbers[1] * 60 + numbers[2]
-    if len(numbers) == 2:
-        return numbers[0] * 60 + numbers[1]
-    if len(numbers) == 1:
-        return numbers[0]
-    raise ValueError(f"Invalid timestamp: {value!r}")
-
-
-@dataclass(frozen=True, slots=True)
-class Judgment:
-    youtube_video_id: str
-    start_seconds: float | None = None
-    end_seconds: float | None = None
-    grade: int = 1
-    segment_id: str | None = None
-    time_reference: TimeReference = "video"
-
-
 @dataclass(frozen=True, slots=True)
 class EvaluationQuery:
     query_id: str
     query: str
-    judgments: tuple[Judgment, ...]
-    language: str = "unspecified"
-    category: str = "unspecified"
-    split: str = "test"
+    relevant_youtube_video_id: str
+    tiktok_url: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -181,15 +148,11 @@ def build_evaluation_manifest(
     engine: SearchEngine,
     methods: list[str],
     queries: list[EvaluationQuery],
-    query_files: list[Path],
+    query_file: Path,
     segments_path: Path,
     bm25_path: Path,
     vector_path: Path | None,
-    split: str,
-    ranking_unit: Literal["segment", "episode"],
-    relevance_level: RelevanceLevel = "segment",
     candidate_k: int,
-    tolerance_seconds: float,
     bootstrap_samples: int,
     warmup: bool,
     weights: HybridWeights,
@@ -198,7 +161,6 @@ def build_evaluation_manifest(
 ) -> dict[str, Any]:
     """Describe all inputs and settings needed to audit an evaluation run."""
     weights.validate()
-    effective_ranking_unit = "episode" if relevance_level == "episode" else ranking_unit
     vector_index = engine.vector_index
     reranker = engine.reranker
     return {
@@ -213,17 +175,13 @@ def build_evaluation_manifest(
         },
         "evaluation": {
             "methods": methods,
-            "split": split,
-            "ranking_unit": effective_ranking_unit,
-            "requested_ranking_unit": ranking_unit,
-            "relevance_level": relevance_level,
+            "ranking_unit": "episode",
             "top_k": top_k,
             "candidate_k": candidate_k,
             "rerank_k": rerank_k,
-            "group_by_episode": (effective_ranking_unit == "episode"),
-            "deduplicate_overlaps": (effective_ranking_unit == "episode"),
+            "group_by_episode": True,
+            "deduplicate_overlaps": True,
             "overlap_deduplication_threshold": (OVERLAP_DEDUPLICATION_THRESHOLD),
-            "tolerance_seconds": tolerance_seconds,
             "warmup": warmup,
             "hybrid_weights": asdict(weights),
             "rerank_blend_weights": {
@@ -279,7 +237,7 @@ def build_evaluation_manifest(
             "local_models_only": engine.local_models_only,
         },
         "artifacts": {
-            "queries": [_file_manifest(path) for path in query_files],
+            "queries": _file_manifest(query_file),
             "segments": _file_manifest(segments_path),
             "bm25_index": _file_manifest(bm25_path),
             "vector_index": _vector_artifact_manifest(vector_path),
@@ -287,80 +245,33 @@ def build_evaluation_manifest(
     }
 
 
-def _parse_judgment(
-    value: dict[str, Any],
-    default_reference: str,
-    *,
-    relevance_level: RelevanceLevel = "segment",
-) -> Judgment:
-    if "youtube_video_id" not in value:
-        raise ValueError("Every relevance judgment needs youtube_video_id")
-    grade = int(value.get("grade", value.get("relevance", 1)))
-    if grade <= 0:
-        raise ValueError("Relevance grades must be positive integers")
-    reference = str(value.get("time_reference", default_reference))
-    if reference not in {"transcript", "video"}:
-        raise ValueError("time_reference must be 'transcript' or 'video'")
-    start = parse_timestamp(value.get("start_seconds", value.get("start_time")))
-    end = parse_timestamp(value.get("end_seconds", value.get("end_time")))
-    if (start is None) != (end is None):
-        raise ValueError("A judgment must provide both start and end, or neither")
-    if start is not None and end is not None and end < start:
-        raise ValueError("A judgment end cannot precede its start")
-    segment_id = value.get("segment_id")
-    if relevance_level == "segment" and start is None and segment_id is None:
-        raise ValueError(
-            "A segment-level judgment needs segment_id or a start/end interval; "
-            "episode-only labels are too coarse"
-        )
-    return Judgment(
-        youtube_video_id=str(value["youtube_video_id"]),
-        start_seconds=start,
-        end_seconds=end,
-        grade=grade,
-        segment_id=str(segment_id) if segment_id is not None else None,
-        time_reference=reference,  # type: ignore[arg-type]
-    )
-
-
-def load_evaluation_queries(
-    path: Path, *, relevance_level: RelevanceLevel = "segment"
-) -> list[EvaluationQuery]:
+def load_evaluation_queries(path: Path) -> list[EvaluationQuery]:
     queries: list[EvaluationQuery] = []
     seen_ids: set[str] = set()
-    for row_number, row in enumerate(read_jsonl(path), start=1):
-        query_id = str(row.get("query_id") or row.get("id") or f"q{row_number:03d}")
+    for row in read_jsonl(path):
+        query_id = str(row.get("query_id") or "").strip()
+        if not query_id:
+            raise ValueError("Every evaluation query needs query_id")
         if query_id in seen_ids:
             raise ValueError(f"Duplicate evaluation query id: {query_id}")
         seen_ids.add(query_id)
         query_text = str(row.get("query") or "").strip()
         if not query_text:
             raise ValueError(f"Evaluation query {query_id} is empty")
-        default_reference = str(row.get("time_reference", "video"))
-        raw_judgments = row.get("judgments", row.get("relevant"))
-        if raw_judgments is None and row.get("relevant_youtube_video_id"):
-            raw_judgments = [
-                {
-                    "youtube_video_id": row["relevant_youtube_video_id"],
-                    "start_time": row.get("relevant_segment_start"),
-                    "end_time": row.get("relevant_segment_end"),
-                    "time_reference": default_reference,
-                }
-            ]
-        if not isinstance(raw_judgments, list) or not raw_judgments:
-            raise ValueError(f"Evaluation query {query_id} has no judgments")
-        judgments = tuple(
-            _parse_judgment(value, default_reference, relevance_level=relevance_level)
-            for value in raw_judgments
-        )
+        relevant_video_id = str(row.get("relevant_youtube_video_id") or "").strip()
+        if not relevant_video_id:
+            raise ValueError(
+                f"Evaluation query {query_id} needs relevant_youtube_video_id"
+            )
+        tiktok_url = str(row.get("tiktok_url") or "").strip()
+        if not tiktok_url.startswith("https://www.tiktok.com/"):
+            raise ValueError(f"Evaluation query {query_id} needs a public TikTok URL")
         queries.append(
             EvaluationQuery(
                 query_id=query_id,
                 query=query_text,
-                judgments=judgments,
-                language=str(row.get("language", "unspecified")),
-                category=str(row.get("category", "unspecified")),
-                split=str(row.get("split", "test")),
+                relevant_youtube_video_id=relevant_video_id,
+                tiktok_url=tiktok_url,
             )
         )
     if not queries:
@@ -368,134 +279,32 @@ def load_evaluation_queries(
     return queries
 
 
-def load_evaluation_query_files(
-    paths: list[Path], *, relevance_level: RelevanceLevel = "segment"
-) -> list[EvaluationQuery]:
-    """Load multiple evaluation files while enforcing globally unique query IDs."""
-    queries: list[EvaluationQuery] = []
-    seen_ids: set[str] = set()
-    for path in paths:
-        for query in load_evaluation_queries(path, relevance_level=relevance_level):
-            if query.query_id in seen_ids:
-                raise ValueError(
-                    f"Duplicate evaluation query id across files: {query.query_id}"
-                )
-            seen_ids.add(query.query_id)
-            queries.append(query)
-    return queries
-
-
-def judgment_matches_segment(
-    judgment: Judgment,
-    segment: SegmentRecord,
-    *,
-    tolerance_seconds: float = 2.0,
-    relevance_level: RelevanceLevel = "segment",
-) -> bool:
-    if judgment.youtube_video_id != segment.youtube_video_id:
-        return False
-    if relevance_level == "episode":
-        return True
-    if judgment.segment_id is not None:
-        return judgment.segment_id == segment.segment_id
-    assert judgment.start_seconds is not None and judgment.end_seconds is not None
-    if judgment.time_reference == "video":
-        start, end = segment.video_start_seconds, segment.video_end_seconds
-    else:
-        start, end = segment.start_seconds, segment.end_seconds
-    return (
-        end >= judgment.start_seconds - tolerance_seconds
-        and start <= judgment.end_seconds + tolerance_seconds
-    )
-
-
-def relevance_grades(
-    results: list[SearchResult],
-    judgments: tuple[Judgment, ...],
-    *,
-    tolerance_seconds: float = 2.0,
-    relevance_level: RelevanceLevel = "segment",
-) -> tuple[list[int], set[int]]:
-    """Greedily map each retrieved hit to at most one still-unmatched judgment."""
-    unmatched = set(range(len(judgments)))
-    grades: list[int] = []
-    matched: set[int] = set()
-    for result in results:
-        candidates = [
-            index
-            for index in unmatched
-            if judgment_matches_segment(
-                judgments[index],
-                result.segment,
-                tolerance_seconds=tolerance_seconds,
-                relevance_level=relevance_level,
-            )
-        ]
-        if not candidates:
-            grades.append(0)
-            continue
-        best = max(candidates, key=lambda index: (judgments[index].grade, -index))
-        grades.append(judgments[best].grade)
-        unmatched.remove(best)
-        matched.add(best)
-    return grades, matched
-
-
-def dcg(grades: list[int], k: int) -> float:
-    return sum(
-        ((2**grade) - 1) / math.log2(rank + 1)
-        for rank, grade in enumerate(grades[:k], start=1)
-        if grade > 0
-    )
-
-
 def calculate_query_metrics(
     results: list[SearchResult],
-    judgments: tuple[Judgment, ...],
-    *,
-    tolerance_seconds: float = 2.0,
-    relevance_level: RelevanceLevel = "segment",
+    relevant_youtube_video_id: str,
 ) -> QueryMetrics:
-    if relevance_level == "episode":
-        seen_episodes: set[str] = set()
-        unique_results: list[SearchResult] = []
-        for result in results:
-            episode_id = result.segment.youtube_video_id
-            if episode_id in seen_episodes:
-                continue
+    seen_episodes: set[str] = set()
+    ranked_episode_ids: list[str] = []
+    for result in results:
+        episode_id = result.segment.youtube_video_id
+        if episode_id not in seen_episodes:
             seen_episodes.add(episode_id)
-            unique_results.append(result)
-        results = unique_results
-        judgments_by_episode: dict[str, Judgment] = {}
-        for judgment in judgments:
-            existing = judgments_by_episode.get(judgment.youtube_video_id)
-            if existing is None or judgment.grade > existing.grade:
-                judgments_by_episode[judgment.youtube_video_id] = judgment
-        judgments = tuple(judgments_by_episode.values())
-    grades, matched = relevance_grades(
-        results,
-        judgments,
-        tolerance_seconds=tolerance_seconds,
-        relevance_level=relevance_level,
-    )
-    top_five_grades, top_five_matched = relevance_grades(
-        results[:5],
-        judgments,
-        tolerance_seconds=tolerance_seconds,
-        relevance_level=relevance_level,
-    )
-    del top_five_grades
-    recall = len(top_five_matched) / len(judgments)
-    first_relevant = next(
-        (rank for rank, grade in enumerate(grades[:10], start=1) if grade > 0),
+            ranked_episode_ids.append(episode_id)
+    relevant_rank = next(
+        (
+            rank
+            for rank, episode_id in enumerate(ranked_episode_ids[:10], start=1)
+            if episode_id == relevant_youtube_video_id
+        ),
         None,
     )
-    reciprocal_rank = 1.0 / first_relevant if first_relevant is not None else 0.0
-    ideal_grades = sorted((judgment.grade for judgment in judgments), reverse=True)
-    ideal = dcg(ideal_grades, 10)
-    ndcg = dcg(grades, 10) / ideal if ideal > 0 else 0.0
-    del matched
-    return QueryMetrics(recall, reciprocal_rank, ndcg)
+    return QueryMetrics(
+        recall_at_5=float(relevant_rank is not None and relevant_rank <= 5),
+        reciprocal_rank_at_10=1 / relevant_rank if relevant_rank is not None else 0.0,
+        ndcg_at_10=(
+            1 / math.log2(relevant_rank + 1) if relevant_rank is not None else 0.0
+        ),
+    )
 
 
 def _bootstrap_interval(
@@ -520,9 +329,6 @@ def _evaluation_checkpoint_fingerprint(
     method: SearchMethod,
     *,
     candidate_k: int,
-    ranking_unit: Literal["segment", "episode"],
-    relevance_level: RelevanceLevel,
-    tolerance_seconds: float,
     top_k: int,
     rerank_k: int,
     weights: HybridWeights,
@@ -533,9 +339,7 @@ def _evaluation_checkpoint_fingerprint(
         "queries": evaluation_query_fingerprint(queries),
         "corpus": segment_corpus_fingerprint(engine.segments),
         "candidate_k": candidate_k,
-        "ranking_unit": ranking_unit,
-        "relevance_level": relevance_level,
-        "tolerance_seconds": tolerance_seconds,
+        "ranking_unit": "episode",
         "top_k": top_k,
         "rerank_k": rerank_k,
         "weights": asdict(weights),
@@ -567,24 +371,17 @@ def evaluate_method(
     method: SearchMethod,
     *,
     candidate_k: int = 50,
-    ranking_unit: Literal["segment", "episode"] = "segment",
-    relevance_level: RelevanceLevel = "segment",
-    tolerance_seconds: float = 2.0,
     bootstrap_samples: int = 1000,
     top_k: int = EVALUATION_TOP_K,
     rerank_k: int = EVALUATION_RERANK_K,
     weights: HybridWeights = HybridWeights(),
     checkpoint_path: Path | None = None,
 ) -> EvaluationSummary:
-    effective_ranking_unit = "episode" if relevance_level == "episode" else ranking_unit
     checkpoint_fingerprint = _evaluation_checkpoint_fingerprint(
         engine,
         queries,
         method,
         candidate_k=candidate_k,
-        ranking_unit=ranking_unit,
-        relevance_level=relevance_level,
-        tolerance_seconds=tolerance_seconds,
         top_k=top_k,
         rerank_k=rerank_k,
         weights=weights,
@@ -617,23 +414,18 @@ def evaluate_method(
                 top_k=top_k,
                 candidate_k=candidate_k,
                 weights=weights,
-                group_by_episode=effective_ranking_unit == "episode",
-                deduplicate_overlaps=effective_ranking_unit == "episode",
+                group_by_episode=True,
+                deduplicate_overlaps=True,
                 rerank_k=rerank_k,
             )
             elapsed_ms = (time.perf_counter() - started) * 1000
-            score = calculate_query_metrics(
-                results,
-                item.judgments,
-                tolerance_seconds=tolerance_seconds,
-                relevance_level=relevance_level,
-            )
+            score = calculate_query_metrics(results, item.relevant_youtube_video_id)
             checkpoint_row = {
                 "run_fingerprint": checkpoint_fingerprint,
                 "query_id": item.query_id,
                 "query": item.query,
-                "language": item.language,
-                "category": item.category,
+                "relevant_youtube_video_id": item.relevant_youtube_video_id,
+                "tiktok_url": item.tiktok_url,
                 "recall_at_5": score.recall_at_5,
                 "reciprocal_rank_at_10": score.reciprocal_rank_at_10,
                 "ndcg_at_10": score.ndcg_at_10,
@@ -666,8 +458,10 @@ def evaluate_method(
             {
                 "query_id": checkpoint_row["query_id"],
                 "query": checkpoint_row["query"],
-                "language": checkpoint_row["language"],
-                "category": checkpoint_row["category"],
+                "relevant_youtube_video_id": checkpoint_row[
+                    "relevant_youtube_video_id"
+                ],
+                "tiktok_url": checkpoint_row["tiktok_url"],
                 "recall_at_5": score.recall_at_5,
                 "reciprocal_rank_at_10": score.reciprocal_rank_at_10,
                 "ndcg_at_10": score.ndcg_at_10,
@@ -724,16 +518,9 @@ def _log_table(summaries: list[EvaluationSummary]) -> None:
 
 def build_argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Evaluate BM25, dense, hybrid, and reranked scene retrieval"
+        description="Evaluate episode retrieval on organic TikTok queries"
     )
     parser.add_argument("--queries", type=Path, required=True)
-    parser.add_argument(
-        "--additional-queries",
-        action="append",
-        type=Path,
-        default=[],
-        help="Additional JSONL query file; may be supplied more than once",
-    )
     parser.add_argument("--segments", type=Path, default=Path("data/segments.jsonl"))
     parser.add_argument("--bm25", type=Path, default=Path("artifacts/bm25_index.json"))
     parser.add_argument(
@@ -741,18 +528,6 @@ def build_argument_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--methods", default="bm25", help="Comma-separated methods")
     parser.add_argument("--candidate-k", type=int, default=50)
-    parser.add_argument(
-        "--ranking-unit", choices=("segment", "episode"), default="segment"
-    )
-    parser.add_argument(
-        "--relevance-level",
-        choices=("segment", "episode"),
-        default="segment",
-        help="Match synthetic judgments by segment interval, or organic judgments "
-        "by YouTube episode ID",
-    )
-    parser.add_argument("--tolerance-seconds", type=float, default=2.0)
-    parser.add_argument("--split", default="test")
     parser.add_argument("--bootstrap-samples", type=int, default=1000)
     parser.add_argument(
         "--warmup",
@@ -796,19 +571,7 @@ def main() -> None:
         raise ValueError("--checkpoint requires exactly one evaluation method")
     if args.reranker_batch_size < 1:
         raise ValueError("--reranker-batch-size must be positive")
-    query_files = [args.queries, *args.additional_queries]
-    queries = [
-        item
-        for item in load_evaluation_query_files(
-            query_files, relevance_level=args.relevance_level
-        )
-        if item.split == args.split
-    ]
-    if not queries:
-        raise ValueError(f"No evaluation queries in split {args.split!r}")
-    effective_ranking_unit = (
-        "episode" if args.relevance_level == "episode" else args.ranking_unit
-    )
+    queries = load_evaluation_queries(args.queries)
 
     device = resolve_torch_device(args.device)
     reranker = None
@@ -837,8 +600,8 @@ def main() -> None:
                 top_k=EVALUATION_TOP_K,
                 candidate_k=args.candidate_k,
                 weights=weights,
-                group_by_episode=effective_ranking_unit == "episode",
-                deduplicate_overlaps=effective_ranking_unit == "episode",
+                group_by_episode=True,
+                deduplicate_overlaps=True,
                 rerank_k=EVALUATION_RERANK_K,
             )
     summaries = [
@@ -847,9 +610,6 @@ def main() -> None:
             queries,
             method,  # type: ignore[arg-type]
             candidate_k=args.candidate_k,
-            ranking_unit=args.ranking_unit,
-            relevance_level=args.relevance_level,
-            tolerance_seconds=args.tolerance_seconds,
             bootstrap_samples=args.bootstrap_samples,
             top_k=EVALUATION_TOP_K,
             rerank_k=EVALUATION_RERANK_K,
@@ -863,28 +623,19 @@ def main() -> None:
         args.output,
         {
             "query_file": str(args.queries),
-            "query_files": [str(path) for path in query_files],
-            "split": args.split,
-            "ranking_unit": effective_ranking_unit,
-            "requested_ranking_unit": args.ranking_unit,
-            "relevance_level": args.relevance_level,
+            "ranking_unit": "episode",
             "candidate_k": args.candidate_k,
-            "tolerance_seconds": args.tolerance_seconds,
             "warmup": args.warmup,
             "checkpoint": str(args.checkpoint) if args.checkpoint else None,
             "manifest": build_evaluation_manifest(
                 engine=engine,
                 methods=methods,
                 queries=queries,
-                query_files=query_files,
+                query_file=args.queries,
                 segments_path=args.segments,
                 bm25_path=args.bm25,
                 vector_path=args.vectors,
-                split=args.split,
-                ranking_unit=args.ranking_unit,
-                relevance_level=args.relevance_level,
                 candidate_k=args.candidate_k,
-                tolerance_seconds=args.tolerance_seconds,
                 bootstrap_samples=args.bootstrap_samples,
                 warmup=args.warmup,
                 weights=weights,

@@ -54,7 +54,7 @@ commands below or publish them to an external artifact store.
 
 Built wheels and source distributions are intentionally code-only. When running
 outside this checkout, provide asset locations explicitly with `--segments`,
-`--bm25`, `--vectors`, `--queries`, and `--additional-queries`. For the HTTP API,
+`--bm25`, `--vectors`, and `--queries`. For the HTTP API,
 set `DP_SEGMENTS_PATH`, `DP_BM25_PATH`, and `DP_VECTOR_PATH`.
 
 ## Transcription and MLflow pipeline
@@ -286,23 +286,28 @@ http://localhost:8080 (`frontend/Dockerfile`, nginx proxying `/search` and
 
 ## Evaluation
 
-The synthetic benchmark contains 120 manually written, segment-labeled queries:
-28 development queries and 92 test queries, with two independently phrased
-cases for every corpus episode. It includes Serbian Latin and Cyrillic, omitted
-diacritics, typos, partial memories, topics, names, and remembered quotations.
-
-Evaluate its untouched test split at segment level:
+The benchmark contains 55 real viewer questions extracted from public TikTok
+reply videos. Each query has one relevant YouTube episode and retains the
+public TikTok URL that establishes its lineage. Evaluation ranks episodes, not
+transcript windows.
 
 ```bash
-uv run --extra search dp-evaluate --queries data/evaluation_queries.jsonl --additional-queries data/evaluation_queries_expansion.jsonl --segments data/segments.jsonl --bm25 artifacts/bm25_index.json --vectors artifacts/vector_index --methods bm25,dense,hybrid --relevance-level segment --split test --output artifacts/evaluation_results.json
+uv run --extra search dp-evaluate --queries data/evaluation_queries_tiktok.jsonl --segments data/segments.jsonl --bm25 artifacts/bm25_index.json --vectors artifacts/vector_index --methods bm25,dense,hybrid --output artifacts/evaluation_results_tiktok.json
 ```
 
-Evaluation reports Recall@5, MRR@10, nDCG@10, mean/p95 latency, and bootstrap
-95% confidence intervals. Relevance requires both the correct episode and an
-overlapping temporal window; a retrieved segment can satisfy a judgment only
-once. Use the `dev` split for tuning aliases, chunking, and fusion weights, and
-report only the untouched `test` result. Read metric values from the written
-evaluation artifact, not from example numbers or historical reports.
+The reported metrics are:
+
+- **Recall@5:** fraction of queries whose relevant episode appears in the first
+  five results. Each query contributes either 1 or 0.
+- **MRR@10:** mean reciprocal rank of the relevant episode in the first ten:
+  rank 1 scores 1, rank 2 scores 1/2, and a miss scores 0.
+- **nDCG@10:** position-sensitive score using a logarithmic discount. With one
+  binary relevant episode, rank `r` scores `1/log2(r+1)` and a miss scores 0.
+  It penalizes lower ranks less sharply than MRR.
+- **Mean latency:** arithmetic mean wall-clock search time per query.
+- **P95 latency:** the latency at or below which 95% of measured queries fall.
+- **95% confidence interval:** query-level bootstrap interval around each
+  quality metric; it describes uncertainty from this finite query sample.
 
 BM25 is also the `dp-evaluate` default. Evaluation outputs include a complete
 run manifest: query, corpus, index, and vector-file hashes; vector and reranker
@@ -312,17 +317,8 @@ state. Outputs remain generated artifacts under `artifacts/`; do not commit
 them. Publish benchmark results to MLflow, object storage, or another artifact
 store when they need to be shared.
 
-The separate `data/evaluation_queries_tiktok.jsonl` benchmark contains 55 real
-viewer questions extracted from public TikTok reply videos. Its judgments
-identify episodes but do not claim scene boundaries, so evaluate it separately
-at episode level:
-
-```bash
-uv run --extra search dp-evaluate --queries data/evaluation_queries_tiktok.jsonl --segments data/segments.jsonl --bm25 artifacts/bm25_index.json --vectors artifacts/vector_index --methods bm25,dense,hybrid --relevance-level episode --split test --output artifacts/evaluation_results_tiktok.json
-```
-
-Each TikTok row uses the same evaluation-query schema and adds the public post
-URL and ID as provenance.
+Each per-query result and checkpoint repeats its `tiktok_url`, so a reported
+success or failure can be traced back to the source question.
 
 ## Data contracts
 
