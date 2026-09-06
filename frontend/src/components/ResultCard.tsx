@@ -27,7 +27,6 @@ interface ResultCardProps {
 
 export default function ResultCard({ result, isLast }: ResultCardProps) {
   const top = result.rank === 1;
-  const [showTranscript, setShowTranscript] = useState(result.rank <= 2);
   const [showComponents, setShowComponents] = useState(false);
   const [showPlayer, setShowPlayer] = useState(false);
   const [thumbFailed, setThumbFailed] = useState(false);
@@ -148,9 +147,7 @@ export default function ResultCard({ result, isLast }: ResultCardProps) {
         )}
 
         <div className="flex min-w-0 flex-col gap-3 lg:col-start-1 lg:row-start-2">
-          {showTranscript && (
-            <Transcript snippet={result.snippet} speakers={result.speakers} />
-          )}
+          <Transcript snippet={result.snippet} speakers={result.speakers} />
 
           {showComponents && (
             <div className="flex flex-wrap gap-x-6 gap-y-1 border border-ink px-4 py-3 font-mono text-xs text-ink">
@@ -166,24 +163,6 @@ export default function ResultCard({ result, isLast }: ResultCardProps) {
           )}
 
           <div className="flex flex-wrap items-center pt-1 gap-4">
-            {!showTranscript && (
-              <button
-                type="button"
-                onClick={() => setShowTranscript(true)}
-                className="font-mono text-xs tracking-[1.2px] uppercase underline decoration-black underline-offset-4 text-neutral-600 cursor-pointer"
-              >
-                Prikaži transkript
-              </button>
-            )}
-            {showTranscript && result.rank > 2 && (
-              <button
-                type="button"
-                onClick={() => setShowTranscript(false)}
-                className="font-mono text-xs tracking-[1.2px] uppercase underline decoration-black underline-offset-4 text-neutral-600 cursor-pointer"
-              >
-                Sakrij transkript
-              </button>
-            )}
             <button
               type="button"
               onClick={() => setShowComponents((current) => !current)}
