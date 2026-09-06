@@ -30,6 +30,8 @@ class CrossEncoderReranker:
         batch_size: int = 50,
         model_revision: str | None = None,
     ) -> None:
+        if batch_size < 1:
+            raise ValueError("Reranker batch_size must be positive")
         try:
             from sentence_transformers import CrossEncoder
         except ImportError as error:

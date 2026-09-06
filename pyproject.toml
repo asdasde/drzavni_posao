@@ -35,11 +35,6 @@ api = [
 test = [
     "pytest>=8.3.0",
 ]
-tiktok-eval = [
-    "av>=14.0.0",
-    "pillow>=11.0.0",
-    "yt-dlp[curl-cffi,default]>=2026.8.19",
-]
 
 [project.scripts]
 dp-segment = "drzavni_posao.search.conform.pipeline:main"
@@ -47,7 +42,6 @@ dp-build-bm25 = "drzavni_posao.search.indexing.bm25:main"
 dp-build-vectors = "drzavni_posao.search.indexing.vector:main"
 dp-search = "drzavni_posao.search.retrieval.engine:main"
 dp-evaluate = "drzavni_posao.search.evaluation.runner:main"
-dp-tiktok-eval = "drzavni_posao.tiktok_eval.cli:main"
 dp-serve = "drzavni_posao.search.api.app:main"
 
 [build-system]

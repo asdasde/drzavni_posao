@@ -11,6 +11,7 @@ from drzavni_posao.search.evaluation.runner import (
     build_argument_parser,
     build_evaluation_manifest,
     calculate_query_metrics,
+    evaluate_method,
     load_evaluation_queries,
     relevance_grades,
 )
@@ -39,7 +40,7 @@ class EvaluationTests(unittest.TestCase):
         self.assertEqual(args.methods, "bm25")
         self.assertIsNone(args.vectors)
         self.assertEqual(args.queries, Path("queries.jsonl"))
-        self.assertEqual(args.relevance_level, "scene")
+        self.assertEqual(args.relevance_level, "segment")
 
     def test_evaluate_cli_accepts_episode_relevance(self) -> None:
         args = build_argument_parser().parse_args(
@@ -64,7 +65,7 @@ class EvaluationTests(unittest.TestCase):
 
             episode_queries = load_evaluation_queries(path, relevance_level="episode")
             self.assertEqual(episode_queries[0].judgments, (Judgment("e1"),))
-            with self.assertRaisesRegex(ValueError, "A scene judgment needs"):
+            with self.assertRaisesRegex(ValueError, "A segment-level judgment needs"):
                 load_evaluation_queries(path)
 
     def test_evaluation_manifest_captures_configuration_and_artifacts(self) -> None:
@@ -130,7 +131,7 @@ class EvaluationTests(unittest.TestCase):
         self.assertEqual(manifest["models"]["reranker"]["revision"], "reranker-commit")
         self.assertEqual(manifest["evaluation"]["top_k"], 10)
         self.assertEqual(manifest["evaluation"]["rerank_k"], 50)
-        self.assertEqual(manifest["evaluation"]["relevance_level"], "scene")
+        self.assertEqual(manifest["evaluation"]["relevance_level"], "segment")
         self.assertEqual(manifest["data"]["query_count"], 1)
         self.assertEqual(len(manifest["data"]["query_set_fingerprint"]), 64)
         self.assertEqual(len(manifest["data"]["corpus_fingerprint"]), 64)
@@ -224,6 +225,44 @@ class EvaluationTests(unittest.TestCase):
         self.assertEqual(metrics.recall_at_5, 1.0)
         self.assertEqual(metrics.reciprocal_rank_at_10, 0.5)
         self.assertAlmostEqual(metrics.ndcg_at_10, 1 / math.log2(3))
+
+    def test_evaluation_checkpoint_resumes_completed_queries(self) -> None:
+        class FakeEngine:
+            def __init__(self) -> None:
+                self.segments = [make_segment("s1", "e1", "text")]
+                self.reranker = None
+                self.calls = 0
+
+            def search(self, *_args, **_kwargs):
+                self.calls += 1
+                return [result(1, "s1", "e1", 0)]
+
+        queries = [
+            EvaluationQuery(f"q{index}", f"query {index}", (Judgment("e1"),))
+            for index in (1, 2)
+        ]
+        engine = FakeEngine()
+        with tempfile.TemporaryDirectory() as temporary:
+            checkpoint = Path(temporary) / "checkpoint.jsonl"
+
+            first = evaluate_method(
+                engine,
+                queries,
+                "bm25",
+                relevance_level="episode",
+                checkpoint_path=checkpoint,
+            )
+            second = evaluate_method(
+                engine,
+                queries,
+                "bm25",
+                relevance_level="episode",
+                checkpoint_path=checkpoint,
+            )
+
+            self.assertEqual(len(checkpoint.read_text().splitlines()), 2)
+        self.assertEqual(engine.calls, 2)
+        self.assertEqual(first.to_dict(), second.to_dict())
 
     def test_episode_metrics_collapse_duplicate_judgments(self) -> None:
         metrics = calculate_query_metrics(

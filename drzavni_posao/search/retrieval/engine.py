@@ -348,6 +348,7 @@ def build_argument_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--allow-model-download", action="store_true")
     parser.add_argument("--reranker-model", default=DEFAULT_RERANKER_MODEL)
+    parser.add_argument("--reranker-batch-size", type=int, default=50)
     parser.add_argument(
         "--reranker-revision",
         help="Optional Hugging Face commit, tag, or branch to pin",
@@ -369,6 +370,7 @@ def main() -> None:
             args.reranker_model,
             device=device,
             local_files_only=not args.allow_model_download,
+            batch_size=args.reranker_batch_size,
             model_revision=args.reranker_revision,
         )
     engine = SearchEngine.from_paths(

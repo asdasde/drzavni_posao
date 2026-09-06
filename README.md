@@ -286,11 +286,15 @@ http://localhost:8080 (`frontend/Dockerfile`, nginx proxying `/search` and
 
 ## Evaluation
 
-Evaluation query sets are supplied separately from the repository. Pass an
-explicit JSONL file whose judgments use the current `youtube_video_id` schema:
+The synthetic benchmark contains 120 manually written, segment-labeled queries:
+28 development queries and 92 test queries, with two independently phrased
+cases for every corpus episode. It includes Serbian Latin and Cyrillic, omitted
+diacritics, typos, partial memories, topics, names, and remembered quotations.
+
+Evaluate its untouched test split at segment level:
 
 ```bash
-uv run --extra search dp-evaluate --queries path/to/evaluation_queries.jsonl --segments data/segments.jsonl --bm25 artifacts/bm25_index.json --vectors artifacts/vector_index --methods bm25,dense,hybrid --split test --output artifacts/evaluation_results.json
+uv run --extra search dp-evaluate --queries data/evaluation_queries.jsonl --additional-queries data/evaluation_queries_expansion.jsonl --segments data/segments.jsonl --bm25 artifacts/bm25_index.json --vectors artifacts/vector_index --methods bm25,dense,hybrid --relevance-level segment --split test --output artifacts/evaluation_results.json
 ```
 
 Evaluation reports Recall@5, MRR@10, nDCG@10, mean/p95 latency, and bootstrap
@@ -308,12 +312,17 @@ state. Outputs remain generated artifacts under `artifacts/`; do not commit
 them. Publish benchmark results to MLflow, object storage, or another artifact
 store when they need to be shared.
 
-For an organic, episode-level benchmark, the TikTok collector extracts the
-visible reply-sticker question with multi-frame OCR and matches the post caption
-to the canonical episode catalog. It accepts a row only when both stages are
-confident, keeps failures in resumable append-only state, and deliberately does
-not infer scene timestamps. See [docs/tiktok-eval.md](docs/tiktok-eval.md) for
-browser/profile collection, export, and `--relevance-level episode` evaluation.
+The separate `data/evaluation_queries_tiktok.jsonl` benchmark contains 55 real
+viewer questions extracted from public TikTok reply videos. Its judgments
+identify episodes but do not claim scene boundaries, so evaluate it separately
+at episode level:
+
+```bash
+uv run --extra search dp-evaluate --queries data/evaluation_queries_tiktok.jsonl --segments data/segments.jsonl --bm25 artifacts/bm25_index.json --vectors artifacts/vector_index --methods bm25,dense,hybrid --relevance-level episode --split test --output artifacts/evaluation_results_tiktok.json
+```
+
+Each TikTok row uses the same evaluation-query schema and adds the public post
+URL and ID as provenance.
 
 ## Data contracts
 

@@ -5,6 +5,7 @@ import hashlib
 import json
 import logging
 import math
+import os
 import platform
 import random
 import statistics
@@ -36,7 +37,7 @@ from ..retrieval.rerank import CrossEncoderReranker, DEFAULT_RERANKER_MODEL
 logger = logging.getLogger(__name__)
 
 TimeReference = Literal["transcript", "video"]
-RelevanceLevel = Literal["scene", "episode"]
+RelevanceLevel = Literal["segment", "episode"]
 EVALUATION_TOP_K = 10
 EVALUATION_RERANK_K = 50
 BOOTSTRAP_CONFIDENCE = 0.95
@@ -186,7 +187,7 @@ def build_evaluation_manifest(
     vector_path: Path | None,
     split: str,
     ranking_unit: Literal["segment", "episode"],
-    relevance_level: RelevanceLevel = "scene",
+    relevance_level: RelevanceLevel = "segment",
     candidate_k: int,
     tolerance_seconds: float,
     bootstrap_samples: int,
@@ -290,7 +291,7 @@ def _parse_judgment(
     value: dict[str, Any],
     default_reference: str,
     *,
-    relevance_level: RelevanceLevel = "scene",
+    relevance_level: RelevanceLevel = "segment",
 ) -> Judgment:
     if "youtube_video_id" not in value:
         raise ValueError("Every relevance judgment needs youtube_video_id")
@@ -307,9 +308,9 @@ def _parse_judgment(
     if start is not None and end is not None and end < start:
         raise ValueError("A judgment end cannot precede its start")
     segment_id = value.get("segment_id")
-    if relevance_level == "scene" and start is None and segment_id is None:
+    if relevance_level == "segment" and start is None and segment_id is None:
         raise ValueError(
-            "A scene judgment needs segment_id or a start/end interval; "
+            "A segment-level judgment needs segment_id or a start/end interval; "
             "episode-only labels are too coarse"
         )
     return Judgment(
@@ -323,7 +324,7 @@ def _parse_judgment(
 
 
 def load_evaluation_queries(
-    path: Path, *, relevance_level: RelevanceLevel = "scene"
+    path: Path, *, relevance_level: RelevanceLevel = "segment"
 ) -> list[EvaluationQuery]:
     queries: list[EvaluationQuery] = []
     seen_ids: set[str] = set()
@@ -368,7 +369,7 @@ def load_evaluation_queries(
 
 
 def load_evaluation_query_files(
-    paths: list[Path], *, relevance_level: RelevanceLevel = "scene"
+    paths: list[Path], *, relevance_level: RelevanceLevel = "segment"
 ) -> list[EvaluationQuery]:
     """Load multiple evaluation files while enforcing globally unique query IDs."""
     queries: list[EvaluationQuery] = []
@@ -389,7 +390,7 @@ def judgment_matches_segment(
     segment: SegmentRecord,
     *,
     tolerance_seconds: float = 2.0,
-    relevance_level: RelevanceLevel = "scene",
+    relevance_level: RelevanceLevel = "segment",
 ) -> bool:
     if judgment.youtube_video_id != segment.youtube_video_id:
         return False
@@ -413,7 +414,7 @@ def relevance_grades(
     judgments: tuple[Judgment, ...],
     *,
     tolerance_seconds: float = 2.0,
-    relevance_level: RelevanceLevel = "scene",
+    relevance_level: RelevanceLevel = "segment",
 ) -> tuple[list[int], set[int]]:
     """Greedily map each retrieved hit to at most one still-unmatched judgment."""
     unmatched = set(range(len(judgments)))
@@ -453,7 +454,7 @@ def calculate_query_metrics(
     judgments: tuple[Judgment, ...],
     *,
     tolerance_seconds: float = 2.0,
-    relevance_level: RelevanceLevel = "scene",
+    relevance_level: RelevanceLevel = "segment",
 ) -> QueryMetrics:
     if relevance_level == "episode":
         seen_episodes: set[str] = set()
@@ -513,6 +514,53 @@ def _bootstrap_interval(
     return [lower, upper]
 
 
+def _evaluation_checkpoint_fingerprint(
+    engine: SearchEngine,
+    queries: list[EvaluationQuery],
+    method: SearchMethod,
+    *,
+    candidate_k: int,
+    ranking_unit: Literal["segment", "episode"],
+    relevance_level: RelevanceLevel,
+    tolerance_seconds: float,
+    top_k: int,
+    rerank_k: int,
+    weights: HybridWeights,
+) -> str:
+    reranker = engine.reranker
+    payload = {
+        "method": method,
+        "queries": evaluation_query_fingerprint(queries),
+        "corpus": segment_corpus_fingerprint(engine.segments),
+        "candidate_k": candidate_k,
+        "ranking_unit": ranking_unit,
+        "relevance_level": relevance_level,
+        "tolerance_seconds": tolerance_seconds,
+        "top_k": top_k,
+        "rerank_k": rerank_k,
+        "weights": asdict(weights),
+        "reranker": (
+            {
+                "name": reranker.name,
+                "revision": reranker.revision,
+                "batch_size": getattr(reranker, "batch_size", None),
+            }
+            if reranker is not None
+            else None
+        ),
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _append_checkpoint(path: Path, record: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n")
+        handle.flush()
+        os.fsync(handle.fileno())
+
+
 def evaluate_method(
     engine: SearchEngine,
     queries: list[EvaluationQuery],
@@ -520,40 +568,68 @@ def evaluate_method(
     *,
     candidate_k: int = 50,
     ranking_unit: Literal["segment", "episode"] = "segment",
-    relevance_level: RelevanceLevel = "scene",
+    relevance_level: RelevanceLevel = "segment",
     tolerance_seconds: float = 2.0,
     bootstrap_samples: int = 1000,
     top_k: int = EVALUATION_TOP_K,
     rerank_k: int = EVALUATION_RERANK_K,
     weights: HybridWeights = HybridWeights(),
+    checkpoint_path: Path | None = None,
 ) -> EvaluationSummary:
     effective_ranking_unit = "episode" if relevance_level == "episode" else ranking_unit
+    checkpoint_fingerprint = _evaluation_checkpoint_fingerprint(
+        engine,
+        queries,
+        method,
+        candidate_k=candidate_k,
+        ranking_unit=ranking_unit,
+        relevance_level=relevance_level,
+        tolerance_seconds=tolerance_seconds,
+        top_k=top_k,
+        rerank_k=rerank_k,
+        weights=weights,
+    )
+    expected_query_ids = {query.query_id for query in queries}
+    checkpoint_rows: dict[str, dict[str, Any]] = {}
+    if checkpoint_path is not None and checkpoint_path.is_file():
+        for record in read_jsonl(checkpoint_path):
+            if record.get("run_fingerprint") != checkpoint_fingerprint:
+                raise ValueError(
+                    f"Checkpoint {checkpoint_path} belongs to a different evaluation run"
+                )
+            query_id = str(record.get("query_id") or "")
+            if query_id not in expected_query_ids:
+                raise ValueError(
+                    f"Checkpoint {checkpoint_path} contains unknown query {query_id!r}"
+                )
+            checkpoint_rows[query_id] = record
+
     per_query: list[dict[str, Any]] = []
     metrics: list[QueryMetrics] = []
     latencies: list[float] = []
-    for item in queries:
-        started = time.perf_counter()
-        results = engine.search(
-            item.query,
-            method=method,
-            top_k=top_k,
-            candidate_k=candidate_k,
-            weights=weights,
-            group_by_episode=effective_ranking_unit == "episode",
-            deduplicate_overlaps=effective_ranking_unit == "episode",
-            rerank_k=rerank_k,
-        )
-        elapsed_ms = (time.perf_counter() - started) * 1000
-        score = calculate_query_metrics(
-            results,
-            item.judgments,
-            tolerance_seconds=tolerance_seconds,
-            relevance_level=relevance_level,
-        )
-        metrics.append(score)
-        latencies.append(elapsed_ms)
-        per_query.append(
-            {
+    for index, item in enumerate(queries, start=1):
+        checkpoint_row = checkpoint_rows.get(item.query_id)
+        if checkpoint_row is None:
+            started = time.perf_counter()
+            results = engine.search(
+                item.query,
+                method=method,
+                top_k=top_k,
+                candidate_k=candidate_k,
+                weights=weights,
+                group_by_episode=effective_ranking_unit == "episode",
+                deduplicate_overlaps=effective_ranking_unit == "episode",
+                rerank_k=rerank_k,
+            )
+            elapsed_ms = (time.perf_counter() - started) * 1000
+            score = calculate_query_metrics(
+                results,
+                item.judgments,
+                tolerance_seconds=tolerance_seconds,
+                relevance_level=relevance_level,
+            )
+            checkpoint_row = {
+                "run_fingerprint": checkpoint_fingerprint,
                 "query_id": item.query_id,
                 "query": item.query,
                 "language": item.language,
@@ -563,6 +639,40 @@ def evaluate_method(
                 "ndcg_at_10": score.ndcg_at_10,
                 "latency_ms": elapsed_ms,
                 "result_segment_ids": [result.segment.segment_id for result in results],
+            }
+            if checkpoint_path is not None:
+                _append_checkpoint(checkpoint_path, checkpoint_row)
+                logger.info(
+                    "[%s] checkpointed query %d/%d (%s, %.1f s)",
+                    method,
+                    index,
+                    len(queries),
+                    item.query_id,
+                    elapsed_ms / 1000,
+                )
+        else:
+            if checkpoint_row.get("query") != item.query:
+                raise ValueError(f"Checkpoint query text changed for {item.query_id!r}")
+            score = QueryMetrics(
+                recall_at_5=float(checkpoint_row["recall_at_5"]),
+                reciprocal_rank_at_10=float(checkpoint_row["reciprocal_rank_at_10"]),
+                ndcg_at_10=float(checkpoint_row["ndcg_at_10"]),
+            )
+            elapsed_ms = float(checkpoint_row["latency_ms"])
+
+        metrics.append(score)
+        latencies.append(elapsed_ms)
+        per_query.append(
+            {
+                "query_id": checkpoint_row["query_id"],
+                "query": checkpoint_row["query"],
+                "language": checkpoint_row["language"],
+                "category": checkpoint_row["category"],
+                "recall_at_5": score.recall_at_5,
+                "reciprocal_rank_at_10": score.reciprocal_rank_at_10,
+                "ndcg_at_10": score.ndcg_at_10,
+                "latency_ms": elapsed_ms,
+                "result_segment_ids": checkpoint_row["result_segment_ids"],
             }
         )
     recall_values = [item.recall_at_5 for item in metrics]
@@ -636,9 +746,10 @@ def build_argument_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--relevance-level",
-        choices=("scene", "episode"),
-        default="scene",
-        help="Match judgments by scene interval/segment, or by YouTube episode ID",
+        choices=("segment", "episode"),
+        default="segment",
+        help="Match synthetic judgments by segment interval, or organic judgments "
+        "by YouTube episode ID",
     )
     parser.add_argument("--tolerance-seconds", type=float, default=2.0)
     parser.add_argument("--split", default="test")
@@ -655,12 +766,19 @@ def build_argument_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--allow-model-download", action="store_true")
     parser.add_argument("--reranker-model", default=DEFAULT_RERANKER_MODEL)
+    parser.add_argument("--reranker-batch-size", type=int, default=50)
     parser.add_argument(
         "--reranker-revision",
         help="Optional Hugging Face commit, tag, or branch to pin",
     )
     parser.add_argument(
         "--output", type=Path, default=Path("artifacts/evaluation_results.json")
+    )
+    parser.add_argument(
+        "--checkpoint",
+        type=Path,
+        help="append one durable per-query result after each completed query; "
+        "requires exactly one evaluation method and resumes matching runs",
     )
     return parser
 
@@ -674,6 +792,10 @@ def main() -> None:
     invalid = set(methods) - allowed
     if invalid:
         raise ValueError(f"Unknown evaluation methods: {sorted(invalid)}")
+    if args.checkpoint is not None and len(methods) != 1:
+        raise ValueError("--checkpoint requires exactly one evaluation method")
+    if args.reranker_batch_size < 1:
+        raise ValueError("--reranker-batch-size must be positive")
     query_files = [args.queries, *args.additional_queries]
     queries = [
         item
@@ -696,6 +818,7 @@ def main() -> None:
             args.reranker_model,
             device=device,
             local_files_only=not args.allow_model_download,
+            batch_size=args.reranker_batch_size,
             model_revision=args.reranker_revision,
         )
     engine = SearchEngine.from_paths(
@@ -731,6 +854,7 @@ def main() -> None:
             top_k=EVALUATION_TOP_K,
             rerank_k=EVALUATION_RERANK_K,
             weights=weights,
+            checkpoint_path=args.checkpoint,
         )
         for method in methods
     ]
@@ -747,6 +871,7 @@ def main() -> None:
             "candidate_k": args.candidate_k,
             "tolerance_seconds": args.tolerance_seconds,
             "warmup": args.warmup,
+            "checkpoint": str(args.checkpoint) if args.checkpoint else None,
             "manifest": build_evaluation_manifest(
                 engine=engine,
                 methods=methods,
