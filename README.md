@@ -19,14 +19,14 @@ Python 3.12+ and [uv](https://docs.astral.sh/uv/) are recommended.
 # Transcription pipeline (WhisperX, MLflow, Jupyter) and tests
 uv sync --extra transcribe --extra test
 
-# Search, semantic retrieval, Streamlit, and tests
+# Search, semantic retrieval, and tests
 uv sync --extra search --extra test
 
 # HTTP search API (FastAPI + uvicorn)
 uv sync --extra search --extra api
 ```
 
-The `search` extra installs Sentence Transformers and Streamlit. The
+The `search` extra installs Sentence Transformers. The
 transcription pipeline's WhisperX, MLflow, and Jupyter dependencies live in the
 `transcribe` extra (WhisperX's torchcodec dependency has no Linux arm64 wheels,
 so keeping it optional lets the search API Docker image build on arm64).
@@ -55,7 +55,7 @@ commands below or publish them to an external artifact store.
 
 Built wheels and source distributions are intentionally code-only. When running
 outside this checkout, provide asset locations explicitly with `--segments`,
-`--bm25`, `--vectors`, `--queries`, and `--additional-queries`. For Streamlit,
+`--bm25`, `--vectors`, `--queries`, and `--additional-queries`. For the HTTP API,
 set `DP_SEGMENTS_PATH`, `DP_BM25_PATH`, and `DP_VECTOR_PATH`.
 
 ## Transcription and MLflow pipeline
@@ -229,25 +229,10 @@ are **relative relevance scores**, not probabilities. Results include the
 episode, video time interval, known characters, score components, an
 evidence-based explanation, and original transcript text.
 
-Run the browser interface:
-
-```bash
-uv run --extra search streamlit run drzavni_posao/search/app/streamlit.py
-```
-
-After those generated files exist, the application reads
-`data/segments.jsonl`, `artifacts/bm25_index.json`, and
-`artifacts/vector_index` by default. Override those locations with
-`DP_SEGMENTS_PATH`, `DP_BM25_PATH`, and `DP_VECTOR_PATH`. Its initial selection
-is BM25 even when vector metadata is present. It loads a semantic model only
-after dense or hybrid search is selected, always local-only, and presents a
-user-facing error rather than downloading one. `DP_RERANKER_MODEL` and
-`DP_RERANKER_REVISION` select an exact locally cached reranker snapshot.
-
 The canonical episode catalog supplies every title, broadcast date, and
 YouTube URL. `--source-time-offset` remains a corpus-build override when the export
 config does not match how the transcript audio was trimmed. Results use the catalog URL
-to create timestamped links and embed videos in the Streamlit app.
+to create timestamped links.
 
 ## HTTP search API
 
@@ -263,10 +248,29 @@ uv run dp-serve   # 0.0.0.0:8000, override with DP_API_PORT
 (methods `bm25`, `dense`, `hybrid`, `hybrid_rerank`) and returns
 `{query, method, took_seconds, results}` where each result is
 `SearchResult.to_dict()`. `GET /health` lists the currently loadable methods
-(`bm25` only until the vector index is built). It honours the same `DP_*` path,
-device, and reranker variables as Streamlit, plus `DP_CORS_ORIGINS`
+(`bm25` only until the vector index is built).
+
+The API reads `data/segments.jsonl`, `artifacts/bm25_index.json`, and
+`artifacts/vector_index` by default. Override those locations with
+`DP_SEGMENTS_PATH`, `DP_BM25_PATH`, and `DP_VECTOR_PATH`. `DP_DEVICE` selects the
+compute device; `DP_RERANKER_MODEL` and `DP_RERANKER_REVISION` select the reranker.
+Models load from the local cache when their search method is requested.
+`DP_CORS_ORIGINS` controls allowed frontend origins
 (comma-separated; default `http://localhost:5173` for the Vite dev server).
 Missing artifacts surface as HTTP 503 with an explanatory message.
+
+## Browser frontend
+
+With the API running, start the React frontend in another terminal:
+
+```bash
+cd frontend
+npm install
+VITE_API_BASE_URL=http://localhost:8000 npm run dev
+```
+
+Open http://localhost:5173. See [`frontend/README.md`](frontend/README.md) for
+frontend configuration and production builds.
 
 ## Docker
 
@@ -364,7 +368,8 @@ drzavni_posao/
     indexing/               # BM25 and vector artifacts
     retrieval/              # query processing, search, fusion, reranking
     evaluation/             # judgments, metrics, evaluation runner
-    app/streamlit.py        # search interface
+    api/                    # HTTP API for the React frontend
+frontend/                   # React search interface
 data/
   youtube_episodes.json    # canonical episode catalog
   evaluation_queries*.jsonl

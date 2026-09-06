@@ -27,7 +27,6 @@ search = [
     # 5.3+ imports torchcodec eagerly and only guards against ImportError/OSError,
     # so a torchcodec that cannot find FFmpeg (RuntimeError) breaks text search.
     "sentence-transformers>=3.4.0,<5.3",
-    "streamlit>=1.42.0",
 ]
 api = [
     "fastapi>=0.115",
