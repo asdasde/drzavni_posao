@@ -14,7 +14,6 @@ class SearchResult:
     score_components: dict[str, float]
     matched_characters: list[str]
     matched_terms: list[str]
-    reason: str
     youtube_url_with_timestamp: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
@@ -39,5 +38,4 @@ class SearchResult:
             },
             "matched_characters": self.matched_characters,
             "matched_terms": self.matched_terms,
-            "reason": self.reason,
         }

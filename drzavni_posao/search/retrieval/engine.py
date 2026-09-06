@@ -147,36 +147,6 @@ class SearchEngine:
         ]
         return list(dict.fromkeys(matches))[:10]
 
-    @staticmethod
-    def _reason(
-        method: SearchMethod,
-        matched_characters: list[str],
-        matched_terms: list[str],
-        dense_score: float,
-        rerank_score: float | None,
-    ) -> str:
-        parts: list[str] = []
-        if matched_characters:
-            names = ", ".join(display_name(item) for item in matched_characters)
-            verb = "pojavljuje" if len(matched_characters) == 1 else "pojavljuju"
-            parts.append(f"u sceni se {verb} {names}")
-        if matched_terms:
-            parts.append("poklapa se po rečima iz upita")
-        if method in {"dense", "hybrid", "hybrid_rerank"} and dense_score >= 0.5:
-            parts.append("smisao scene je blizak vašem opisu")
-        if method in {"cross_encoder", "hybrid_rerank"} and rerank_score is not None:
-            parts.append("dodatna provera je potvrdila da scena odgovara upitu")
-        if not parts:
-            return "Najbliža pronađena scena za ovaj opis."
-        first, *rest = parts
-        if not rest:
-            return first[0].upper() + first[1:] + "."
-        if len(rest) == 1:
-            body = f"{first}, a {rest[0]}"
-        else:
-            body = f"{first}, {', '.join(rest[:-1])} i {rest[-1]}"
-        return body[0].upper() + body[1:] + "."
-
     def search(
         self,
         query_text: str,
@@ -326,13 +296,6 @@ class SearchEngine:
                         display_name(item) for item in character_matches[segment_id]
                     ],
                     matched_terms=matched_terms,
-                    reason=self._reason(
-                        method,
-                        character_matches[segment_id],
-                        matched_terms,
-                        normalized_dense,
-                        normalized_reranker,
-                    ),
                     youtube_url_with_timestamp=timestamped_youtube_url(
                         segment.youtube_url, segment.video_start_seconds
                     ),
@@ -355,7 +318,6 @@ def _log_results(results: list[SearchResult]) -> None:
             f"   Time: {segment.video_start_time}–{segment.video_end_time}",
             f"   Characters: {', '.join(segment.speakers) or 'unknown'}",
             f"   Relative score: {result.score:.3f}",
-            f"   Reason: {result.reason}",
         ]
         if result.youtube_url_with_timestamp:
             lines.append(f"   YouTube: {result.youtube_url_with_timestamp}")

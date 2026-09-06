@@ -247,7 +247,6 @@ class RetrievalTests(unittest.TestCase):
             score_components={},
             matched_characters=[],
             matched_terms=[],
-            reason="test reason",
             youtube_url_with_timestamp="https://youtu.be/e1?t=25s",
         )
 
@@ -260,7 +259,6 @@ class RetrievalTests(unittest.TestCase):
             "   Time: 00:00:25–00:00:45\n"
             "   Characters: unknown\n"
             "   Relative score: 0.750\n"
-            "   Reason: test reason\n"
             "   YouTube: https://youtu.be/e1?t=25s\n"
             "   Transcript:\n"
             "     first line\n"
@@ -276,7 +274,6 @@ class RetrievalTests(unittest.TestCase):
             score_components={},
             matched_characters=[],
             matched_terms=[],
-            reason="test reason",
         )
         fake_engine = SimpleNamespace(search=lambda *_args, **_kwargs: [result])
         stdout = StringIO()

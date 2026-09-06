@@ -30,7 +30,6 @@ def result(
         score_components={},
         matched_characters=[],
         matched_terms=[],
-        reason="test",
     )
 
 

@@ -89,9 +89,6 @@ export default function ResultCard({ result, isLast }: ResultCardProps) {
             Vreme u videu: {result.start_time}–{result.end_time} · Likovi:{" "}
             {formatSpeakers(result.speakers)}
           </div>
-          <p className="font-body text-sm italic leading-[1.42857] text-neutral-700">
-            {result.reason}
-          </p>
         </div>
 
         {embedSrc && (

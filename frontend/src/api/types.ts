@@ -52,7 +52,6 @@ export interface SearchResultItem {
   score_components: Record<string, number>;
   matched_characters: string[];
   matched_terms: string[];
-  reason: string;
 }
 
 export interface SearchResponse {

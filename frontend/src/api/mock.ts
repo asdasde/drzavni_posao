@@ -29,8 +29,6 @@ const MOCK_RESULTS: SearchResultItem[] = [
     },
     matched_characters: ["boskic", "cvarkov"],
     matched_terms: ["izbori", "svađa"],
-    reason:
-      "U sceni se pojavljuju Boškić i Đorđe Čvarkov, poklapa se po rečima iz upita i smisao scene je blizak vašem opisu.",
   },
   {
     rank: 2,
@@ -58,7 +56,6 @@ const MOCK_RESULTS: SearchResultItem[] = [
     },
     matched_characters: ["cvarkov"],
     matched_terms: ["glasanje", "komisija"],
-    reason: "U sceni se pojavljuje Đorđe Čvarkov, a poklapa se po rečima iz upita.",
   },
   {
     rank: 3,
@@ -86,7 +83,6 @@ const MOCK_RESULTS: SearchResultItem[] = [
     },
     matched_characters: ["boskic"],
     matched_terms: ["glasanje"],
-    reason: "U sceni se pojavljuje Boškić, a smisao scene je blizak vašem opisu.",
   },
 ];
 

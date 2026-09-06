@@ -31,7 +31,6 @@ EXPECTED_RESULT_KEYS = {
     "score_components",
     "matched_characters",
     "matched_terms",
-    "reason",
 }
 
 
@@ -59,7 +58,6 @@ def _make_result(rank: int = 1) -> SearchResult:
         score_components={"bm25": 0.75},
         matched_characters=["Boškić"],
         matched_terms=["izbora"],
-        reason="BM25 match",
         youtube_url_with_timestamp="https://youtube.com/watch?v=abc&t=12s",
     )
 
