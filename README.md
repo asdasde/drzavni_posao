@@ -33,14 +33,14 @@ so keeping it optional lets the search API Docker image build on arm64).
 
 ### Data utilities
 
-`uv run episodes.py` processes season 3 by default: it uploads existing local
+`uv run scripts/episodes.py` processes season 3 by default: it uploads existing local
 MP3s, then downloads and uploads missing episodes. Use comma-separated
 `--season` or `--episode` values and `--dry-run` to preview the work.
 
 Download locally without accessing Databricks:
 
 ```bash
-uv run episodes.py --local --season 3 --episode 1,10,11,12
+uv run scripts/episodes.py --local --season 3 --episode 1,10,11,12
 ```
 
 See [`docs/databricks-sync.md`](docs/databricks-sync.md) for package, notebook,

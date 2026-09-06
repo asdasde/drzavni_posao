@@ -8,8 +8,8 @@ uploads missing episodes:
 
 ```sh
 databricks auth describe --profile staging
-uv run episodes.py --dry-run
-uv run episodes.py
+uv run scripts/episodes.py --dry-run
+uv run scripts/episodes.py
 ```
 
 The command processes season 3 by default. Use comma-separated `--season` or
