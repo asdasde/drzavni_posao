@@ -17,7 +17,6 @@ from drzavni_posao.search.retrieval.rerank import (
     CrossEncoderReranker,
 )
 
-
 SEGMENTS_PATH = Path(os.environ.get("DP_SEGMENTS_PATH", "data/segments.jsonl"))
 BM25_PATH = Path(os.environ.get("DP_BM25_PATH", "artifacts/bm25_index.json"))
 VECTOR_PATH = Path(os.environ.get("DP_VECTOR_PATH", "artifacts/vector_index"))
@@ -34,7 +33,7 @@ METHODS_BY_LABEL: dict[str, SearchMethod] = {
 
 
 def _vector_metadata_exists(path: Path) -> bool:
-    return (path if path.suffix == ".json" else path.with_suffix(".json")).exists()
+    return path.with_suffix(".json").exists()
 
 
 def _available_methods(vector_available: bool) -> list[str]:
@@ -137,7 +136,7 @@ def main() -> None:
         with st.spinner("Pretražujem transkripte…"):
             results = engine.search(
                 query,
-                method=method,  # type: ignore[arg-type]
+                method=method,
                 top_k=top_k,
                 candidate_k=candidate_k,
                 group_by_episode=group_by_episode,
@@ -182,7 +181,7 @@ def main() -> None:
                 ):
                     st.video(
                         segment.youtube_url,
-                        start_time=max(0, int(round(segment.video_start_seconds))),
+                        start_time=max(0, round(segment.video_start_seconds)),
                     )
                     st.link_button(
                         "Otvori na YouTube-u",

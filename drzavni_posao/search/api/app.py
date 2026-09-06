@@ -23,7 +23,6 @@ from drzavni_posao.search.retrieval.rerank import (
     CrossEncoderReranker,
 )
 
-
 SEGMENTS_PATH = Path(os.environ.get("DP_SEGMENTS_PATH", "data/segments.jsonl"))
 BM25_PATH = Path(os.environ.get("DP_BM25_PATH", "artifacts/bm25_index.json"))
 VECTOR_PATH = Path(os.environ.get("DP_VECTOR_PATH", "artifacts/vector_index"))
@@ -46,7 +45,7 @@ EXPOSED_METHODS: tuple[ExposedMethod, ...] = (
 
 
 def _vector_metadata_exists(path: Path) -> bool:
-    return (path if path.suffix == ".json" else path.with_suffix(".json")).exists()
+    return path.with_suffix(".json").exists()
 
 
 def _available_methods() -> list[str]:

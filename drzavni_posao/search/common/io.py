@@ -4,8 +4,9 @@ import json
 import os
 import tempfile
 from collections.abc import Iterable, Iterator
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, TextIO
 
 from .models import SegmentRecord
 
@@ -39,16 +40,15 @@ def load_segments(path: Path) -> list[SegmentRecord]:
     return segments
 
 
-def write_jsonl(path: Path, rows: Iterable[dict[str, Any]]) -> None:
+@contextmanager
+def _atomic_text_writer(path: Path) -> Iterator[TextIO]:
     path.parent.mkdir(parents=True, exist_ok=True)
     descriptor, temporary_name = tempfile.mkstemp(
         dir=path.parent, prefix=f".{path.name}.", suffix=".tmp"
     )
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-            for row in rows:
-                handle.write(json.dumps(row, ensure_ascii=False, sort_keys=True))
-                handle.write("\n")
+            yield handle
         os.replace(temporary_name, path)
         os.chmod(path, 0o644)
     except BaseException:
@@ -57,22 +57,16 @@ def write_jsonl(path: Path, rows: Iterable[dict[str, Any]]) -> None:
         except FileNotFoundError:
             pass
         raise
+
+
+def write_jsonl(path: Path, rows: Iterable[dict[str, Any]]) -> None:
+    with _atomic_text_writer(path) as handle:
+        for row in rows:
+            handle.write(json.dumps(row, ensure_ascii=False, sort_keys=True))
+            handle.write("\n")
 
 
 def write_json(path: Path, value: Any) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    descriptor, temporary_name = tempfile.mkstemp(
-        dir=path.parent, prefix=f".{path.name}.", suffix=".tmp"
-    )
-    try:
-        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-            json.dump(value, handle, ensure_ascii=False, indent=2, sort_keys=True)
-            handle.write("\n")
-        os.replace(temporary_name, path)
-        os.chmod(path, 0o644)
-    except BaseException:
-        try:
-            os.unlink(temporary_name)
-        except FileNotFoundError:
-            pass
-        raise
+    with _atomic_text_writer(path) as handle:
+        json.dump(value, handle, ensure_ascii=False, indent=2, sort_keys=True)
+        handle.write("\n")

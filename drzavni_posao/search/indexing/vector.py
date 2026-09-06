@@ -5,9 +5,10 @@ import hashlib
 import json
 import logging
 import sys
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol, Sequence
+from typing import Protocol
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
@@ -20,7 +21,6 @@ from ..common.fingerprints import (
 from ..common.io import load_segments, write_json
 from ..common.models import SegmentRecord
 from ..text import normalize_text
-
 
 logger = logging.getLogger(__name__)
 
@@ -248,7 +248,7 @@ class VectorIndex:
     @classmethod
     def build(
         cls, segments: list[SegmentRecord], encoder: TextEncoder
-    ) -> "VectorIndex":
+    ) -> VectorIndex:
         if not segments:
             raise ValueError("Cannot build a vector index over an empty corpus")
         rows = np.asarray(
@@ -292,13 +292,7 @@ class VectorIndex:
 
     @staticmethod
     def artifact_paths(path: Path) -> tuple[Path, Path]:
-        if path.suffix == ".json":
-            metadata_path = path
-            vectors_path = path.with_suffix(".f32")
-        else:
-            metadata_path = path.with_suffix(".json")
-            vectors_path = path.with_suffix(".f32")
-        return metadata_path, vectors_path
+        return path.with_suffix(".json"), path.with_suffix(".f32")
 
     def save(self, path: Path) -> None:
         metadata_path, vectors_path = self.artifact_paths(path)
@@ -329,7 +323,7 @@ class VectorIndex:
     @classmethod
     def load(
         cls, path: Path, *, segments: list[SegmentRecord] | None = None
-    ) -> "VectorIndex":
+    ) -> VectorIndex:
         metadata_path, default_vectors_path = cls.artifact_paths(path)
         metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
         if metadata.get("version") not in SUPPORTED_VECTOR_INDEX_VERSIONS:
