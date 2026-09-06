@@ -616,9 +616,7 @@ def build_argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Evaluate BM25, dense, hybrid, and reranked scene retrieval"
     )
-    parser.add_argument(
-        "--queries", type=Path, default=Path("data/evaluation_queries.jsonl")
-    )
+    parser.add_argument("--queries", type=Path, required=True)
     parser.add_argument(
         "--additional-queries",
         action="append",

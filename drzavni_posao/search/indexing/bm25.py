@@ -5,6 +5,7 @@ import json
 import logging
 import math
 from collections import Counter
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -81,7 +82,7 @@ class BM25Index:
             b=b,
         )
 
-    def score(self, query_tokens: list[str] | tuple[str, ...]) -> list[float]:
+    def score(self, query_tokens: Sequence[str]) -> list[float]:
         if not query_tokens:
             return [0.0] * len(self.segment_ids)
         document_count = len(self.segment_ids)
@@ -115,7 +116,7 @@ class BM25Index:
         return scores
 
     def search(
-        self, query_tokens: list[str] | tuple[str, ...], *, top_k: int = 50
+        self, query_tokens: Sequence[str], *, top_k: int = 50
     ) -> list[BM25Hit]:
         if top_k < 1:
             return []

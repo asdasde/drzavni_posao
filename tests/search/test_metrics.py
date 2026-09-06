@@ -35,14 +35,16 @@ def result(
 
 class EvaluationTests(unittest.TestCase):
     def test_evaluate_cli_defaults_to_bm25(self) -> None:
-        args = build_argument_parser().parse_args([])
+        args = build_argument_parser().parse_args(["--queries", "queries.jsonl"])
         self.assertEqual(args.methods, "bm25")
         self.assertIsNone(args.vectors)
-        self.assertEqual(args.queries, Path("data/evaluation_queries.jsonl"))
+        self.assertEqual(args.queries, Path("queries.jsonl"))
         self.assertEqual(args.relevance_level, "scene")
 
     def test_evaluate_cli_accepts_episode_relevance(self) -> None:
-        args = build_argument_parser().parse_args(["--relevance-level", "episode"])
+        args = build_argument_parser().parse_args(
+            ["--queries", "queries.jsonl", "--relevance-level", "episode"]
+        )
         self.assertEqual(args.relevance_level, "episode")
 
     def test_episode_only_judgment_parses_only_in_episode_mode(self) -> None:

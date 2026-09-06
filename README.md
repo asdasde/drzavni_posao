@@ -7,9 +7,8 @@ This repository contains two connected workflows for *Državni posao* episodes:
 2. a scene-search application that retrieves the most likely **episode, time
    interval, and transcript evidence** for a natural-language description.
 
-The reference benchmark covers 60 episodes. The segment count depends on the
-chunking settings. Search operates at scene level instead of treating an entire
-episode as one document.
+The segment count depends on the chunking settings. Search operates at scene
+level instead of treating an entire episode as one document.
 
 ## Installation
 
@@ -287,15 +286,11 @@ http://localhost:8080 (`frontend/Dockerfile`, nginx proxying `/search` and
 
 ## Evaluation
 
-The benchmark contains 120 manually written, interval-labeled queries: 28
-development queries and 92 test queries, with two independently phrased cases
-for every corpus episode. It includes Serbian Latin and Cyrillic, omitted
-diacritics, typos, partial memories, topics, names, and remembered quotations.
-
-Evaluate the untouched test split:
+Evaluation query sets are supplied separately from the repository. Pass an
+explicit JSONL file whose judgments use the current `youtube_video_id` schema:
 
 ```bash
-uv run --extra search dp-evaluate --queries data/evaluation_queries.jsonl --additional-queries data/evaluation_queries_expansion.jsonl --segments data/segments.jsonl --bm25 artifacts/bm25_index.json --vectors artifacts/vector_index --methods bm25,dense,hybrid --split test --output artifacts/evaluation_results.json
+uv run --extra search dp-evaluate --queries path/to/evaluation_queries.jsonl --segments data/segments.jsonl --bm25 artifacts/bm25_index.json --vectors artifacts/vector_index --methods bm25,dense,hybrid --split test --output artifacts/evaluation_results.json
 ```
 
 Evaluation reports Recall@5, MRR@10, nDCG@10, mean/p95 latency, and bootstrap
@@ -372,7 +367,6 @@ drzavni_posao/
 frontend/                   # React search interface
 data/
   youtube_episodes.json    # canonical episode catalog
-  evaluation_queries*.jsonl
   segments.jsonl           # generated, ignored
   mlflow_exports/          # local MLflow run dumps, ignored
 artifacts/                  # generated indexes/results, ignored
