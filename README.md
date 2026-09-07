@@ -150,8 +150,7 @@ transcript (`character_assigner`, then `diarization`, then `transcription`).
 It preserves original transcript evidence for display and derives normalized
 lexical and semantic fields for retrieval. Semantic passages are tagged as
 `[Epizoda …] [Govore …]` plus dialogue so embeddings and the reranker see
-episode and speaker metadata separately from the spoken lines. Changing that
-format invalidates `artifacts/vector_embedic`; rebuild it after `dp-segment`.
+episode and speaker metadata separately from the spoken lines.
 The segmenter performs Serbian Cyrillic-to-Latin transliteration, whitespace
 cleanup, diacritic folding, controlled aliases, and overlapping, gap-aware
 chunks of up to eight source utterances and 60 seconds.
@@ -176,8 +175,8 @@ uv run dp-build-bm25 \
 ```
 
 The project uses a dependency-free Okapi BM25 index. Semantic retrieval uses
-multilingual E5 embeddings and an exact cosine vector index. Build real vectors
-with an explicit model-download opt-in:
+Embedić embeddings by default and an exact cosine vector index. Build real
+vectors with an explicit model-download opt-in:
 
 ```bash
 uv run --extra search dp-build-vectors \
@@ -289,21 +288,32 @@ http://localhost:8080 (`frontend/Dockerfile`, nginx proxying `/search` and
 
 ## Evaluation
 
-The development benchmark contains 87 episode-search queries: 55 real viewer
-questions extracted from public TikTok reply videos and 32 manually authored
-cases. Every query has one relevant YouTube episode; organic rows retain the
-public TikTok URL that establishes their lineage. Evaluation ranks episodes,
-not transcript windows.
+The development benchmark combines real viewer questions extracted from public
+TikTok reply videos with manually authored cases. Every query has one relevant
+YouTube episode; organic rows retain the public TikTok URL that establishes
+their lineage. Evaluation ranks episodes, not transcript windows.
 
 ```bash
 uv run --extra search dp-evaluate --queries data/evaluation_queries_tiktok.jsonl --segments data/segments.jsonl --bm25 artifacts/bm25_index.json --vectors artifacts/vector_embedic --methods bm25,dense,hybrid,hybrid_rerank --warmup --output artifacts/evaluation_results.json
 ```
 
-On the current 87-query development set, Embedić hybrid + reranker reaches
-Recall@5 `0.770`, MRR@10 `0.630`, and nDCG@10 `0.673`. The reranked embedding
-models are statistically indistinguishable on this sample. The 32 manually
-authored cases are substantially easier than the organic subset, so do not
-present the combined score as an unbiased production estimate.
+On the current development set, Embedić hybrid + reranker reaches Recall@5
+`0.770`, MRR@10 `0.669`, and nDCG@10 `0.702`. The reranked embedding models are
+statistically indistinguishable on this sample. The manually authored cases are
+substantially easier than the organic subset, so do not present the combined
+score as an unbiased production estimate.
+
+Regenerate the data behind the TikTok embedding-comparison Canvas after the
+E5, Embedić, SRBedding, and Embedić+BGE evaluation files have been produced:
+
+```bash
+uv run --no-sync python scripts/build_tiktok_embedding_comparison.py
+```
+
+The script validates that all four runs use the same query set and corpus, then
+writes `artifacts/model_comparison/tiktok_embedding_comparison_data.json`. The
+output includes aggregate and organic/manual metrics, paired 95% bootstrap
+intervals, reranker gains, and the query differences displayed by the Canvas.
 
 The reported metrics are:
 
