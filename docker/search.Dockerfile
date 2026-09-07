@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 # Build search artifacts on the host first:
 #   uv run dp-segment --input <transcripts dir> && uv run dp-build-bm25 && uv run dp-build-vectors --allow-download
 # then: docker build -f docker/search.Dockerfile -t dp-search .
@@ -15,9 +16,11 @@ RUN uv sync --frozen --no-dev --extra search --extra api
 
 # Runtime is local_models_only=True, so bake the dense encoder (and reranker)
 # into the image's HF cache while the build still has network access.
+# Pass HF_TOKEN as a build secret (gated models such as djovak/embedic-large).
 ARG DENSE_MODEL=djovak/embedic-large
 ARG RERANKER_MODEL=cross-encoder/mmarco-mMiniLMv2-L12-H384-v1
-RUN uv run python -c "\
+RUN --mount=type=secret,id=hf_token,env=HF_TOKEN \
+    uv run python -c "\
 from sentence_transformers import SentenceTransformer, CrossEncoder; \
 SentenceTransformer('${DENSE_MODEL}'); \
 CrossEncoder('${RERANKER_MODEL}')"
