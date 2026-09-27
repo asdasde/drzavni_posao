@@ -18,7 +18,12 @@ from ..common.fingerprints import (
     segment_corpus_fingerprint,
     semantic_corpus_fingerprint,
 )
-from ..common.io import load_segments, write_json
+from ..common.io import (
+    load_segments,
+    read_float32_matrix,
+    write_float32_matrix,
+    write_json,
+)
 from ..common.models import SegmentRecord
 from ..text import normalize_text
 
@@ -296,11 +301,7 @@ class VectorIndex:
 
     def save(self, path: Path) -> None:
         metadata_path, vectors_path = self.artifact_paths(path)
-        vectors_path.parent.mkdir(parents=True, exist_ok=True)
-        temporary = vectors_path.with_name(f".{vectors_path.name}.tmp")
-        with temporary.open("wb") as handle:
-            self.vectors.tofile(handle)
-        temporary.replace(vectors_path)
+        write_float32_matrix(vectors_path, self.vectors)
         write_json(
             metadata_path,
             {
@@ -335,14 +336,12 @@ class VectorIndex:
         )
         row_count = int(metadata["row_count"])
         dimension = int(metadata["dimension"])
-        expected_values = row_count * dimension
-        with vectors_path.open("rb") as handle:
-            values = np.fromfile(handle, dtype=np.float32, count=expected_values)
-        if values.size != expected_values:
-            raise ValueError("Vector artifact is truncated")
-        if metadata.get("byte_order", sys.byteorder) != sys.byteorder:
-            values.byteswap(inplace=True)
-        values = values.reshape(row_count, dimension)
+        values = read_float32_matrix(
+            vectors_path,
+            rows=row_count,
+            cols=dimension,
+            byte_order=metadata.get("byte_order", sys.byteorder),
+        )
         model_revision = metadata.get("model_revision")
         model_requested_revision = metadata.get("model_requested_revision")
         index = cls(
@@ -378,6 +377,28 @@ class VectorIndex:
                     "rebuild it"
                 )
         return index
+
+
+def build_text_encoder(
+    model_name: str,
+    *,
+    device: str = "auto",
+    batch_size: int = 32,
+    allow_download: bool = False,
+    model_revision: str | None = None,
+) -> SentenceTransformerTextEncoder:
+    """Construct the dense encoder from run parameters.
+
+    Centralizes the ``allow_download`` → ``local_files_only`` inversion so index
+    building and the topic sweep configure the encoder identically.
+    """
+    return SentenceTransformerTextEncoder(
+        model_name,
+        device=device,
+        batch_size=batch_size,
+        local_files_only=not allow_download,
+        model_revision=model_revision,
+    )
 
 
 def encoder_for_index(
@@ -432,11 +453,11 @@ def main() -> None:
     if args.hashing_smoke:
         encoder: TextEncoder = HashingTextEncoder(args.hashing_dimension)
     else:
-        encoder = SentenceTransformerTextEncoder(
+        encoder = build_text_encoder(
             args.model,
             device=args.device,
-            local_files_only=not args.allow_download,
             batch_size=args.batch_size,
+            allow_download=args.allow_download,
             model_revision=args.model_revision,
         )
     index = VectorIndex.build(segments, encoder)
