@@ -12,6 +12,11 @@ from .transcript import Transcript
 logger = logging.getLogger(__name__)
 
 
+def episode_order_key(number: int | None, tiebreak: str) -> tuple[bool, int, str]:
+    """Sort key: numbered episodes first in order, then the rest by tiebreak."""
+    return (number is None, number if number is not None else 0, tiebreak)
+
+
 class EpisodeMetadata(BaseModel):
     model_config = ConfigDict(frozen=True)
 
