@@ -4,13 +4,15 @@ import unittest
 import unicodedata
 from pathlib import Path
 
-from drzavni_posao.episode import Episode, EpisodeCatalog, EpisodeMetadata
+from drzavni_posao.transcription.episode import Episode, EpisodeCatalog, EpisodeMetadata
 from drzavni_posao.search.conform.pipeline import (
     build_records,
     chunk_raw_segments,
+    load_episodes_from_mlflow_export,
+    source_time_offset_from_export,
 )
-from drzavni_posao.store import MediaStore
-from drzavni_posao.transcript import Transcript
+from drzavni_posao.transcription.store import MediaStore
+from drzavni_posao.transcription.transcript import Transcript
 
 
 def raw_segment(
@@ -299,8 +301,75 @@ class SegmentationTests(unittest.TestCase):
             self.assertIn("ЉУБАВ", segment.text_original)
             self.assertIn("ljubav", segment.text_normalized)
             self.assertEqual(segment.speaker_keys, ["boskic", "cvarkov"])
+            self.assertTrue(
+                segment.text_semantic.startswith(
+                    "[Epizoda Rakija] [Govore Boškić, Đorđe Čvarkov]"
+                )
+            )
             self.assertEqual(segment.video_start_seconds, 26.0)
             self.assertEqual(segment.video_start_time, "00:00:26")
+
+    def test_mlflow_export_prefers_character_assigner_transcript(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            export_dir = root / "export"
+            episode_dir = export_dir / "episodes" / "1"
+            (episode_dir / "transcription").mkdir(parents=True)
+            (episode_dir / "character_assigner").mkdir()
+            catalog_path = root / "youtube_episodes.json"
+            catalog_path.write_text(
+                json.dumps({"episodes": [catalog_record()]}), encoding="utf-8"
+            )
+            (export_dir / "config.json").write_text(
+                json.dumps({"audio": {"trim_start": 25, "trim_end": 0}}),
+                encoding="utf-8",
+            )
+            (episode_dir / "transcription" / "transcript.json").write_text(
+                json.dumps(
+                    {
+                        "file": "episode.mp3",
+                        "segments": [raw_segment(1.0, 2.0, "Anoniman.", "SPEAKER_00")],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (episode_dir / "character_assigner" / "transcript.json").write_text(
+                json.dumps(
+                    {
+                        "file": "episode.mp3",
+                        "segments": [raw_segment(1.0, 2.0, "Boskic govori.", "Boskic")],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            media = MediaStore(None, export_dir, catalog_path=catalog_path)
+
+            episodes = load_episodes_from_mlflow_export(media, export_dir)
+            segments = build_records(
+                episodes,
+                source_time_offset_seconds=source_time_offset_from_export(export_dir),
+            )
+
+            self.assertEqual(len(episodes), 1)
+            self.assertEqual(episodes[0].transcript.segments[0]["speaker"], "Boskic")
+            self.assertEqual(segments[0].speaker_keys, ["boskic"])
+            self.assertEqual(segments[0].video_start_seconds, 26.0)
+
+    def test_mlflow_export_rejects_flat_transcript_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            catalog_path = root / "youtube_episodes.json"
+            catalog_path.write_text(
+                json.dumps({"episodes": [catalog_record()]}), encoding="utf-8"
+            )
+            (root / "1.json").write_text(
+                json.dumps({"file": "episode.mp3", "segments": []}),
+                encoding="utf-8",
+            )
+            media = MediaStore(None, root, catalog_path=catalog_path)
+
+            with self.assertRaisesRegex(ValueError, "not an MLflow export"):
+                load_episodes_from_mlflow_export(media, root)
 
 
 if __name__ == "__main__":

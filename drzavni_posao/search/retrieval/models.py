@@ -14,13 +14,13 @@ class SearchResult:
     score_components: dict[str, float]
     matched_characters: list[str]
     matched_terms: list[str]
-    reason: str
     youtube_url_with_timestamp: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "rank": self.rank,
             "youtube_video_id": self.segment.youtube_video_id,
+            "episode_number": self.segment.episode_number,
             "episode_title": self.segment.episode_title,
             "segment_id": self.segment.segment_id,
             "start_seconds": self.segment.start_seconds,
@@ -38,5 +38,4 @@ class SearchResult:
             },
             "matched_characters": self.matched_characters,
             "matched_terms": self.matched_terms,
-            "reason": self.reason,
         }

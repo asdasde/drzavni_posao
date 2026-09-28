@@ -11,15 +11,14 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from ..common.device import resolve_torch_device
 from ..common.io import load_segments
 from ..common.models import SegmentRecord
-from ..query import ProcessedQuery, display_name, process_query
-from ..text import tokenize
 from ..indexing.bm25 import BM25Index
 from ..indexing.encoders import TextEncoder
 from ..indexing.vector import VectorIndex, encoder_for_index
+from ..query import ProcessedQuery, display_name, process_query
+from ..text import tokenize
 from .fusion import HybridWeights, normalize_branch_scores
 from .models import SearchResult
-from .rerank import CrossEncoderReranker, DEFAULT_RERANKER_MODEL, Reranker
-
+from .rerank import DEFAULT_RERANKER_MODEL, CrossEncoderReranker, Reranker
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +33,7 @@ def timestamped_youtube_url(url: str | None, seconds: float) -> str | None:
         return None
     parts = urlsplit(url)
     query = dict(parse_qsl(parts.query, keep_blank_values=True))
-    query["t"] = f"{max(0, int(round(seconds)))}s"
+    query["t"] = f"{max(0, round(seconds))}s"
     return urlunsplit(
         (parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment)
     )
@@ -94,7 +93,7 @@ class SearchEngine:
         dense_device: str = "auto",
         local_models_only: bool = True,
         reranker: Reranker | None = None,
-    ) -> "SearchEngine":
+    ) -> SearchEngine:
         segments = load_segments(segments_path)
         bm25 = BM25Index.load(bm25_path, segments=segments)
         vector = (
@@ -147,32 +146,6 @@ class SearchEngine:
             if not term.startswith("__stem_") and term in document_terms
         ]
         return list(dict.fromkeys(matches))[:10]
-
-    @staticmethod
-    def _reason(
-        method: SearchMethod,
-        matched_characters: list[str],
-        matched_terms: list[str],
-        dense_score: float,
-        rerank_score: float | None,
-    ) -> str:
-        evidence: list[str] = []
-        if matched_characters:
-            names = ", ".join(display_name(item) for item in matched_characters)
-            evidence.append(f"matches requested character metadata/text ({names})")
-        if matched_terms:
-            evidence.append(f"shares lexical evidence ({', '.join(matched_terms[:6])})")
-        if method in {"dense", "hybrid", "hybrid_rerank"} and dense_score >= 0.5:
-            evidence.append("has a strong relative multilingual semantic match")
-        if method == "cross_encoder" and rerank_score is not None:
-            evidence.append("is a strong exhaustive cross-encoder match")
-        elif method == "hybrid_rerank" and rerank_score is not None:
-            evidence.append("was promoted by the cross-encoder reranker")
-        return (
-            "; ".join(evidence)
-            if evidence
-            else "best relative match in the candidate set"
-        )
 
     def search(
         self,
@@ -257,7 +230,7 @@ class SearchEngine:
             base_scores[segment_id] = score
 
         reranker_scores: dict[str, float] = {}
-        final_scores = dict(base_scores)
+        final_scores = base_scores
         rankable_ids: set[str] | list[str] = candidate_ids
         if method == "cross_encoder":
             if self.reranker is None:
@@ -266,7 +239,7 @@ class SearchEngine:
                 )
             raw_reranker = self.reranker.score(query.semantic, self.segments)
             reranker_scores = normalize_branch_scores(raw_reranker)
-            final_scores = dict(reranker_scores)
+            final_scores = reranker_scores
         elif method == "hybrid_rerank":
             if self.reranker is None:
                 raise RuntimeError(
@@ -287,71 +260,50 @@ class SearchEngine:
             rankable_ids = preliminary
 
         ranked_ids = sorted(rankable_ids, key=lambda item: (-final_scores[item], item))
-        selected_ids: list[str] = []
+        results: list[SearchResult] = []
         used_episodes: set[str] = set()
-        selected_segments: list[SegmentRecord] = []
         for segment_id in ranked_ids:
             segment = self.by_id[segment_id]
             if group_by_episode and segment.youtube_video_id in used_episodes:
                 continue
             if deduplicate_overlaps and any(
-                existing.youtube_video_id == segment.youtube_video_id
-                and _temporal_overlap_ratio(existing, segment)
+                result.segment.youtube_video_id == segment.youtube_video_id
+                and _temporal_overlap_ratio(result.segment, segment)
                 >= OVERLAP_DEDUPLICATION_THRESHOLD
-                for existing in selected_segments
+                for result in results
             ):
                 continue
-            selected_ids.append(segment_id)
-            selected_segments.append(segment)
-            used_episodes.add(segment.youtube_video_id)
-            if len(selected_ids) >= top_k:
-                break
-
-        results: list[SearchResult] = []
-        for rank, segment_id in enumerate(selected_ids, start=1):
-            segment = self.by_id[segment_id]
             matched_terms = self._matched_terms(query, segment)
             normalized_dense = dense_scores.get(segment_id, 0.0)
             normalized_reranker = reranker_scores.get(segment_id)
+            score_components = {
+                "bm25": bm25_scores.get(segment_id, 0.0),
+                "dense": normalized_dense,
+                "metadata": character_scores[segment_id],
+                "bm25_raw": raw_bm25.get(segment_id, 0.0),
+                "dense_raw": raw_dense.get(segment_id, 0.0),
+            }
+            if normalized_reranker is not None:
+                key = "cross_encoder" if method == "cross_encoder" else "reranker"
+                score_components[key] = normalized_reranker
             results.append(
                 SearchResult(
-                    rank=rank,
+                    rank=len(results) + 1,
                     segment=segment,
                     score=final_scores[segment_id],
-                    score_components={
-                        "bm25": bm25_scores.get(segment_id, 0.0),
-                        "dense": normalized_dense,
-                        "metadata": character_scores[segment_id],
-                        "bm25_raw": raw_bm25.get(segment_id, 0.0),
-                        "dense_raw": raw_dense.get(segment_id, 0.0),
-                        **(
-                            {
-                                (
-                                    "cross_encoder"
-                                    if method == "cross_encoder"
-                                    else "reranker"
-                                ): normalized_reranker
-                            }
-                            if normalized_reranker is not None
-                            else {}
-                        ),
-                    },
+                    score_components=score_components,
                     matched_characters=[
                         display_name(item) for item in character_matches[segment_id]
                     ],
                     matched_terms=matched_terms,
-                    reason=self._reason(
-                        method,
-                        character_matches[segment_id],
-                        matched_terms,
-                        normalized_dense,
-                        normalized_reranker,
-                    ),
                     youtube_url_with_timestamp=timestamped_youtube_url(
                         segment.youtube_url, segment.video_start_seconds
                     ),
                 )
             )
+            used_episodes.add(segment.youtube_video_id)
+            if len(results) >= top_k:
+                break
         return results
 
 
@@ -366,7 +318,6 @@ def _log_results(results: list[SearchResult]) -> None:
             f"   Time: {segment.video_start_time}–{segment.video_end_time}",
             f"   Characters: {', '.join(segment.speakers) or 'unknown'}",
             f"   Relative score: {result.score:.3f}",
-            f"   Reason: {result.reason}",
         ]
         if result.youtube_url_with_timestamp:
             lines.append(f"   YouTube: {result.youtube_url_with_timestamp}")
@@ -397,6 +348,7 @@ def build_argument_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--allow-model-download", action="store_true")
     parser.add_argument("--reranker-model", default=DEFAULT_RERANKER_MODEL)
+    parser.add_argument("--reranker-batch-size", type=int, default=50)
     parser.add_argument(
         "--reranker-revision",
         help="Optional Hugging Face commit, tag, or branch to pin",
@@ -418,6 +370,7 @@ def main() -> None:
             args.reranker_model,
             device=device,
             local_files_only=not args.allow_model_download,
+            batch_size=args.reranker_batch_size,
             model_revision=args.reranker_revision,
         )
     engine = SearchEngine.from_paths(

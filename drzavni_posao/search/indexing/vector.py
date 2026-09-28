@@ -5,9 +5,10 @@ import hashlib
 import json
 import logging
 import sys
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol, Sequence
+from typing import Protocol
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
@@ -17,17 +18,21 @@ from ..common.fingerprints import (
     segment_corpus_fingerprint,
     semantic_corpus_fingerprint,
 )
-from ..common.io import load_segments, write_json
+from ..common.io import (
+    load_segments,
+    read_float32_matrix,
+    write_float32_matrix,
+    write_json,
+)
 from ..common.models import SegmentRecord
 from ..text import normalize_text
-
 
 logger = logging.getLogger(__name__)
 
 VECTOR_INDEX_VERSION = 1
 # Version 2 predates the version reset and uses the same binary schema.
 SUPPORTED_VECTOR_INDEX_VERSIONS = {VECTOR_INDEX_VERSION, 2}
-DEFAULT_MODEL = "intfloat/multilingual-e5-base"
+DEFAULT_MODEL = "djovak/embedic-large"
 Float32Array = NDArray[np.float32]
 
 
@@ -248,7 +253,7 @@ class VectorIndex:
     @classmethod
     def build(
         cls, segments: list[SegmentRecord], encoder: TextEncoder
-    ) -> "VectorIndex":
+    ) -> VectorIndex:
         if not segments:
             raise ValueError("Cannot build a vector index over an empty corpus")
         rows = np.asarray(
@@ -292,21 +297,11 @@ class VectorIndex:
 
     @staticmethod
     def artifact_paths(path: Path) -> tuple[Path, Path]:
-        if path.suffix == ".json":
-            metadata_path = path
-            vectors_path = path.with_suffix(".f32")
-        else:
-            metadata_path = path.with_suffix(".json")
-            vectors_path = path.with_suffix(".f32")
-        return metadata_path, vectors_path
+        return path.with_suffix(".json"), path.with_suffix(".f32")
 
     def save(self, path: Path) -> None:
         metadata_path, vectors_path = self.artifact_paths(path)
-        vectors_path.parent.mkdir(parents=True, exist_ok=True)
-        temporary = vectors_path.with_name(f".{vectors_path.name}.tmp")
-        with temporary.open("wb") as handle:
-            self.vectors.tofile(handle)
-        temporary.replace(vectors_path)
+        write_float32_matrix(vectors_path, self.vectors)
         write_json(
             metadata_path,
             {
@@ -329,7 +324,7 @@ class VectorIndex:
     @classmethod
     def load(
         cls, path: Path, *, segments: list[SegmentRecord] | None = None
-    ) -> "VectorIndex":
+    ) -> VectorIndex:
         metadata_path, default_vectors_path = cls.artifact_paths(path)
         metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
         if metadata.get("version") not in SUPPORTED_VECTOR_INDEX_VERSIONS:
@@ -341,14 +336,12 @@ class VectorIndex:
         )
         row_count = int(metadata["row_count"])
         dimension = int(metadata["dimension"])
-        expected_values = row_count * dimension
-        with vectors_path.open("rb") as handle:
-            values = np.fromfile(handle, dtype=np.float32, count=expected_values)
-        if values.size != expected_values:
-            raise ValueError("Vector artifact is truncated")
-        if metadata.get("byte_order", sys.byteorder) != sys.byteorder:
-            values.byteswap(inplace=True)
-        values = values.reshape(row_count, dimension)
+        values = read_float32_matrix(
+            vectors_path,
+            rows=row_count,
+            cols=dimension,
+            byte_order=metadata.get("byte_order", sys.byteorder),
+        )
         model_revision = metadata.get("model_revision")
         model_requested_revision = metadata.get("model_requested_revision")
         index = cls(
@@ -386,6 +379,28 @@ class VectorIndex:
         return index
 
 
+def build_text_encoder(
+    model_name: str,
+    *,
+    device: str = "auto",
+    batch_size: int = 32,
+    allow_download: bool = False,
+    model_revision: str | None = None,
+) -> SentenceTransformerTextEncoder:
+    """Construct the dense encoder from run parameters.
+
+    Centralizes the ``allow_download`` → ``local_files_only`` inversion so index
+    building and the topic sweep configure the encoder identically.
+    """
+    return SentenceTransformerTextEncoder(
+        model_name,
+        device=device,
+        batch_size=batch_size,
+        local_files_only=not allow_download,
+        model_revision=model_revision,
+    )
+
+
 def encoder_for_index(
     index: VectorIndex,
     *,
@@ -409,7 +424,7 @@ def main() -> None:
         description="Build an exact cosine index for multilingual text embeddings"
     )
     parser.add_argument("--segments", type=Path, default=Path("data/segments.jsonl"))
-    parser.add_argument("--output", type=Path, default=Path("artifacts/vector_index"))
+    parser.add_argument("--output", type=Path, default=Path("artifacts/vector_embedic"))
     parser.add_argument("--model", default=DEFAULT_MODEL)
     parser.add_argument(
         "--model-revision",
@@ -438,11 +453,11 @@ def main() -> None:
     if args.hashing_smoke:
         encoder: TextEncoder = HashingTextEncoder(args.hashing_dimension)
     else:
-        encoder = SentenceTransformerTextEncoder(
+        encoder = build_text_encoder(
             args.model,
             device=args.device,
-            local_files_only=not args.allow_download,
             batch_size=args.batch_size,
+            allow_download=args.allow_download,
             model_revision=args.model_revision,
         )
     index = VectorIndex.build(segments, encoder)

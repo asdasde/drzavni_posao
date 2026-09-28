@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 
-from ..constants import transliterate_serbian
+from ..transcription.constants import transliterate_serbian
 
 DIACRITIC_FOLD = str.maketrans(
     {
@@ -59,6 +60,21 @@ def semantic_text(text: str) -> str:
     return _WHITESPACE_PATTERN.sub(" ", value).strip()
 
 
+def annotated_semantic_passage(
+    episode_title: str,
+    speakers: Sequence[str],
+    dialogue_lines: Sequence[str],
+) -> str:
+    """Embeddable passage with explicit episode and speaker tags."""
+    parts = [f"[Epizoda {episode_title}]"]
+    if speakers:
+        parts.append(f"[Govore {', '.join(speakers)}]")
+    dialogue = " ".join(line.strip() for line in dialogue_lines if line.strip())
+    if dialogue:
+        parts.append(dialogue)
+    return semantic_text(" ".join(parts))
+
+
 def basic_tokens(text: str) -> list[str]:
     value = semantic_text(text).casefold().translate(DIACRITIC_FOLD)
     return _TOKEN_PATTERN.findall(value)
@@ -111,12 +127,8 @@ _SERBIAN_SUFFIXES = tuple(
             "iranje",
             "anje",
             "enje",
-            "ovima",
-            "evima",
             "ima",
             "ama",
-            "anje",
-            "enje",
             "osti",
             "skog",
             "skoj",
@@ -131,7 +143,6 @@ _SERBIAN_SUFFIXES = tuple(
             "iti",
             "ovati",
             "uje",
-            "anje",
         },
         key=len,
         reverse=True,

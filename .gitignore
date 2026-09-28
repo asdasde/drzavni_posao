@@ -13,12 +13,16 @@ wheels/
 .databricks/
 .DS_Store
 
+# Editor/OS
+.idea/
+
 # Generated data and artifacts
 artifacts/
 data/*
 !data/youtube_episodes.json
 !data/evaluation_queries.jsonl
 !data/evaluation_queries_expansion.jsonl
+!data/evaluation_queries_tiktok.jsonl
 downloads/
 mlruns/
 transcripts/
@@ -39,5 +43,13 @@ mlflow.db
 !notebooks/large-v3-vad-realignment-ellipsis-beam10.ipynb
 !notebooks/character-assignment-eda.ipynb
 !notebooks/ellipsis-split-analysis.ipynb
+!notebooks/screenplay-pilot-qlora.ipynb
+!notebooks/screenplay-pilot-qlora-episode-losses.ipynb
 scripts/export_labeling_run.py
 .isaac/
+docs/whitepaper/
+
+# Frontend
+node_modules/
+frontend/.env
+frontend/.env.local

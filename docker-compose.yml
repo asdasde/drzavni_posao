@@ -1,0 +1,21 @@
+services:
+  search:
+    build:
+      context: .
+      dockerfile: docker/search.Dockerfile
+      secrets:
+        - hf_token
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build:
+      context: frontend
+    ports:
+      - "8080:80"
+    depends_on:
+      - search
+
+secrets:
+  hf_token:
+    environment: HF_TOKEN

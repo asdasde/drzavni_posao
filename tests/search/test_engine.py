@@ -1,25 +1,25 @@
-from contextlib import redirect_stdout
-from io import StringIO
 import json
 import tempfile
-from types import SimpleNamespace
 import unittest
-from unittest.mock import patch
+from contextlib import redirect_stdout
+from io import StringIO
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 import numpy as np
 
-from drzavni_posao.search.retrieval import engine as engine_module
 from drzavni_posao.search.common.models import SegmentRecord
 from drzavni_posao.search.indexing.bm25 import BM25Hit, BM25Index
 from drzavni_posao.search.indexing.vector import (
-    DenseHit,
     VECTOR_INDEX_VERSION,
+    DenseHit,
     VectorIndex,
     encoder_for_index,
     normalize_vector,
     resolve_model_path,
 )
+from drzavni_posao.search.retrieval import engine as engine_module
 from drzavni_posao.search.retrieval.engine import (
     SearchEngine,
     build_argument_parser,
@@ -190,6 +190,34 @@ class RetrievalTests(unittest.TestCase):
         results = engine.search("Boškić Čvarkov", group_by_episode=False)
         self.assertEqual(results[0].segment.segment_id, "s1")
 
+    def test_result_filtering_keeps_ranks_contiguous_and_fills_top_k(self) -> None:
+        segments = [
+            make_segment("s1", "e1", "shared", start=0),
+            make_segment("s2", "e1", "shared", start=5),
+            make_segment("s3", "e1", "shared", start=40),
+            make_segment("s4", "e2", "shared", start=0),
+        ]
+        engine = SearchEngine(segments, BM25Index.build(segments), dense_device="cpu")
+        for group, deduplicate, expected in (
+            (True, True, ["s1", "s4"]),
+            (True, False, ["s1", "s4"]),
+            (False, True, ["s1", "s3", "s4"]),
+            (False, False, ["s1", "s2", "s3"]),
+        ):
+            with self.subTest(group=group, deduplicate=deduplicate):
+                results = engine.search(
+                    "shared",
+                    top_k=3,
+                    group_by_episode=group,
+                    deduplicate_overlaps=deduplicate,
+                )
+                self.assertEqual(
+                    [result.segment.segment_id for result in results], expected
+                )
+                self.assertEqual(
+                    [result.rank for result in results], list(range(1, len(expected) + 1))
+                )
+
     def test_cli_defaults_to_bm25(self) -> None:
         args = build_argument_parser().parse_args(["Boškić"])
         self.assertEqual(args.method, "bm25")
@@ -219,7 +247,6 @@ class RetrievalTests(unittest.TestCase):
             score_components={},
             matched_characters=[],
             matched_terms=[],
-            reason="test reason",
             youtube_url_with_timestamp="https://youtu.be/e1?t=25s",
         )
 
@@ -232,7 +259,6 @@ class RetrievalTests(unittest.TestCase):
             "   Time: 00:00:25–00:00:45\n"
             "   Characters: unknown\n"
             "   Relative score: 0.750\n"
-            "   Reason: test reason\n"
             "   YouTube: https://youtu.be/e1?t=25s\n"
             "   Transcript:\n"
             "     first line\n"
@@ -248,7 +274,6 @@ class RetrievalTests(unittest.TestCase):
             score_components={},
             matched_characters=[],
             matched_terms=[],
-            reason="test reason",
         )
         fake_engine = SimpleNamespace(search=lambda *_args, **_kwargs: [result])
         stdout = StringIO()

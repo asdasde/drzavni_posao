@@ -7,36 +7,39 @@ This repository contains two connected workflows for *Državni posao* episodes:
 2. a scene-search application that retrieves the most likely **episode, time
    interval, and transcript evidence** for a natural-language description.
 
-The reference benchmark covers 60 episodes. The segment count depends on the
-chunking settings. Search operates at scene level instead of treating an entire
-episode as one document.
+The segment count depends on the chunking settings. Search operates at scene
+level instead of treating an entire episode as one document.
 
 ## Installation
 
 Python 3.12+ and [uv](https://docs.astral.sh/uv/) are recommended.
 
 ```bash
-# Core pipeline and test dependencies
-uv sync --extra test
+# Transcription pipeline (WhisperX, MLflow, Jupyter) and tests
+uv sync --extra transcribe --extra test
 
-# Search, semantic retrieval, Streamlit, and tests
+# Search, semantic retrieval, and tests
 uv sync --extra search --extra test
+
+# HTTP search API (FastAPI + uvicorn)
+uv sync --extra search --extra api
 ```
 
-The `search` extra installs Sentence Transformers and Streamlit. WhisperX,
-MLflow, and Pydantic are base-project dependencies; WhisperX installs PyTorch
-transitively.
+The `search` extra installs Sentence Transformers. The
+transcription pipeline's WhisperX, MLflow, and Jupyter dependencies live in the
+`transcribe` extra (WhisperX's torchcodec dependency has no Linux arm64 wheels,
+so keeping it optional lets the search API Docker image build on arm64).
 
 ### Data utilities
 
-`uv run episodes.py` processes season 3 by default: it uploads existing local
+`uv run scripts/episodes.py` processes season 3 by default: it uploads existing local
 MP3s, then downloads and uploads missing episodes. Use comma-separated
 `--season` or `--episode` values and `--dry-run` to preview the work.
 
 Download locally without accessing Databricks:
 
 ```bash
-uv run episodes.py --local --season 3 --episode 1,10,11,12
+uv run scripts/episodes.py --local --season 3 --episode 1,10,11,12
 ```
 
 See [`docs/databricks-sync.md`](docs/databricks-sync.md) for package, notebook,
@@ -51,7 +54,7 @@ commands below or publish them to an external artifact store.
 
 Built wheels and source distributions are intentionally code-only. When running
 outside this checkout, provide asset locations explicitly with `--segments`,
-`--bm25`, `--vectors`, `--queries`, and `--additional-queries`. For Streamlit,
+`--bm25`, `--vectors`, and `--queries`. For the HTTP API,
 set `DP_SEGMENTS_PATH`, `DP_BM25_PATH`, and `DP_VECTOR_PATH`.
 
 ## Transcription and MLflow pipeline
@@ -83,8 +86,8 @@ then call `run_pipeline`:
 ```python
 from pathlib import Path
 
-from drzavni_posao import MediaStore, MlflowTracker, PipelineConfig
-from drzavni_posao import TranscriberConfig, run_pipeline
+from drzavni_posao.transcription import MediaStore, MlflowTracker, PipelineConfig
+from drzavni_posao.transcription import TranscriberConfig, run_pipeline
 
 media = MediaStore(
     audio_dir=Path("audio"),
@@ -141,25 +144,30 @@ environment or runtime configuration; do not commit them.
 
 ## Search corpus and indexing
 
-The corpus is built locally from one transcript JSON per episode.
+The corpus is built locally from a labeling export produced by
+`scripts/export_labeling_run.py`. Each episode uses the latest available stage
+transcript (`character_assigner`, then `diarization`, then `transcription`).
 It preserves original transcript evidence for display and derives normalized
-lexical and semantic fields for retrieval. The segmenter performs Serbian
-Cyrillic-to-Latin transliteration, whitespace cleanup, diacritic folding,
-controlled aliases, and overlapping, gap-aware chunks of up to eight source
-utterances and 60 seconds.
+lexical and semantic fields for retrieval. Semantic passages are tagged as
+`[Epizoda …] [Govore …]` plus dialogue so embeddings and the reranker see
+episode and speaker metadata separately from the spoken lines.
+The segmenter performs Serbian Cyrillic-to-Latin transliteration, whitespace
+cleanup, diacritic folding, controlled aliases, and overlapping, gap-aware
+chunks of up to eight source utterances and 60 seconds.
 
-The reference build uses a 25-second source-time offset because the acquisition
-notebook removed the intro before transcription. Segment records therefore
-preserve both transcript-relative and video-relative timestamps.
+Video timestamps add `audio.trim_start` from the export's `config.json` unless
+`--source-time-offset` is set. Segment records therefore preserve both
+transcript-relative and video-relative timestamps.
 
-To rebuild the corpus and BM25 index from a transcript export:
+To rebuild the corpus and BM25 index from an MLflow export:
 
 ```bash
+uv run python scripts/export_labeling_run.py --run-id <run_id>
+
 uv run dp-segment \
-  --input transcripts/d69ff97f \
+  --input data/mlflow_exports/<run_id> \
   --segments-output data/segments.jsonl \
-  --catalog data/youtube_episodes.json \
-  --source-time-offset 25
+  --catalog data/youtube_episodes.json
 
 uv run dp-build-bm25 \
   --segments data/segments.jsonl \
@@ -167,14 +175,14 @@ uv run dp-build-bm25 \
 ```
 
 The project uses a dependency-free Okapi BM25 index. Semantic retrieval uses
-multilingual E5 embeddings and an exact cosine vector index. Build real vectors
-with an explicit model-download opt-in:
+Embedić embeddings by default and an exact cosine vector index. Build real
+vectors with an explicit model-download opt-in:
 
 ```bash
 uv run --extra search dp-build-vectors \
   --segments data/segments.jsonl \
-  --output artifacts/vector_index \
-  --model intfloat/multilingual-e5-base \
+  --output artifacts/vector_embedic \
+  --model djovak/embedic-large \
   --allow-download
 ```
 
@@ -207,7 +215,7 @@ Hybrid search combines BM25 candidates, multilingual dense candidates, and
 character evidence:
 
 ```bash
-uv run --extra search dp-search "the election argument" --method hybrid --vectors artifacts/vector_index
+uv run --extra search dp-search "the election argument" --method hybrid --vectors artifacts/vector_embedic
 ```
 
 Use `--json` for machine-readable results, `--top-k` to control result count,
@@ -222,45 +230,104 @@ are **relative relevance scores**, not probabilities. Results include the
 episode, video time interval, known characters, score components, an
 evidence-based explanation, and original transcript text.
 
-Run the browser interface:
+The canonical episode catalog supplies every title, broadcast date, and
+YouTube URL. `--source-time-offset` remains a corpus-build override when the export
+config does not match how the transcript audio was trimmed. Results use the catalog URL
+to create timestamped links.
+
+## HTTP search API
+
+`drzavni_posao/search/api/app.py` is a thin FastAPI wrapper around the same
+engine, built for the React frontend in `frontend/`:
 
 ```bash
-uv run --extra search streamlit run drzavni_posao/search/app/streamlit.py
+uv sync --extra search --extra api
+uv run dp-serve   # 0.0.0.0:8000, override with DP_API_PORT
 ```
 
-After those generated files exist, the application reads
-`data/segments.jsonl`, `artifacts/bm25_index.json`, and
-`artifacts/vector_index` by default. Override those locations with
-`DP_SEGMENTS_PATH`, `DP_BM25_PATH`, and `DP_VECTOR_PATH`. Its initial selection
-is BM25 even when vector metadata is present. It loads a semantic model only
-after dense or hybrid search is selected, always local-only, and presents a
-user-facing error rather than downloading one. `DP_RERANKER_MODEL` and
-`DP_RERANKER_REVISION` select an exact locally cached reranker snapshot.
+`POST /search` accepts `{query, method, top_k, candidate_k, group_by_episode}`
+(methods `bm25`, `dense`, `hybrid`, `hybrid_rerank`) and returns
+`{query, method, took_seconds, results}` where each result is
+`SearchResult.to_dict()`. `GET /health` lists the currently loadable methods
+(`bm25` only until the vector index is built).
 
-The canonical episode catalog supplies every title, broadcast date, and
-YouTube URL. `--source-time-offset` remains a corpus-build setting because it
-depends on how the transcript audio was trimmed. Results use the catalog URL
-to create timestamped links and embed videos in the Streamlit app.
+The API reads `data/segments.jsonl`, `artifacts/bm25_index.json`, and
+`artifacts/vector_embedic` by default. Override those locations with
+`DP_SEGMENTS_PATH`, `DP_BM25_PATH`, and `DP_VECTOR_PATH`. `DP_DEVICE` selects the
+compute device; `DP_RERANKER_MODEL` and `DP_RERANKER_REVISION` select the reranker.
+Models load from the local cache when their search method is requested.
+`DP_CORS_ORIGINS` controls allowed frontend origins
+(comma-separated; default `http://localhost:5173` for the Vite dev server).
+Missing artifacts surface as HTTP 503 with an explanatory message.
+
+## Browser frontend
+
+With the API running, start the React frontend in another terminal:
+
+```bash
+cd frontend
+npm install
+VITE_API_BASE_URL=http://localhost:8000 npm run dev
+```
+
+Open http://localhost:5173. See [`frontend/README.md`](frontend/README.md) for
+frontend configuration and production builds.
+
+## Docker
+
+With `data/segments.jsonl` and `artifacts/` built on the host:
+
+```bash
+docker compose up --build
+```
+
+serves the API on http://localhost:8000 (image `docker/search.Dockerfile`,
+artifacts and Hugging Face models baked in) and the frontend on
+http://localhost:8080 (`frontend/Dockerfile`, nginx proxying `/search` and
+`/health` to the backend container — no CORS involved).
 
 ## Evaluation
 
-The benchmark contains 120 manually written, interval-labeled queries: 28
-development queries and 92 test queries, with two independently phrased cases
-for every corpus episode. It includes Serbian Latin and Cyrillic, omitted
-diacritics, typos, partial memories, topics, names, and remembered quotations.
-
-Evaluate the untouched test split:
+The development benchmark combines real viewer questions extracted from public
+TikTok reply videos with manually authored cases. Every query has one relevant
+YouTube episode; organic rows retain the public TikTok URL that establishes
+their lineage. Evaluation ranks episodes, not transcript windows.
 
 ```bash
-uv run --extra search dp-evaluate --queries data/evaluation_queries.jsonl --additional-queries data/evaluation_queries_expansion.jsonl --segments data/segments.jsonl --bm25 artifacts/bm25_index.json --vectors artifacts/vector_index --methods bm25,dense,hybrid --split test --output artifacts/evaluation_results.json
+uv run --extra search dp-evaluate --queries data/evaluation_queries_tiktok.jsonl --segments data/segments.jsonl --bm25 artifacts/bm25_index.json --vectors artifacts/vector_embedic --methods bm25,dense,hybrid,hybrid_rerank --warmup --output artifacts/evaluation_results.json
 ```
 
-Evaluation reports Recall@5, MRR@10, nDCG@10, mean/p95 latency, and bootstrap
-95% confidence intervals. Relevance requires both the correct episode and an
-overlapping temporal window; a retrieved segment can satisfy a judgment only
-once. Use the `dev` split for tuning aliases, chunking, and fusion weights, and
-report only the untouched `test` result. Read metric values from the written
-evaluation artifact, not from example numbers or historical reports.
+On the current development set, Embedić hybrid + reranker reaches Recall@5
+`0.770`, MRR@10 `0.669`, and nDCG@10 `0.702`. The reranked embedding models are
+statistically indistinguishable on this sample. The manually authored cases are
+substantially easier than the organic subset, so do not present the combined
+score as an unbiased production estimate.
+
+Regenerate the data behind the TikTok embedding-comparison Canvas after the
+E5, Embedić, SRBedding, and Embedić+BGE evaluation files have been produced:
+
+```bash
+uv run --no-sync python scripts/build_tiktok_embedding_comparison.py
+```
+
+The script validates that all four runs use the same query set and corpus, then
+writes `artifacts/model_comparison/tiktok_embedding_comparison_data.json`. The
+output includes aggregate and organic/manual metrics, paired 95% bootstrap
+intervals, reranker gains, and the query differences displayed by the Canvas.
+
+The reported metrics are:
+
+- **Recall@5:** fraction of queries whose relevant episode appears in the first
+  five results. Each query contributes either 1 or 0.
+- **MRR@10:** mean reciprocal rank of the relevant episode in the first ten:
+  rank 1 scores 1, rank 2 scores 1/2, and a miss scores 0.
+- **nDCG@10:** position-sensitive score using a logarithmic discount. With one
+  binary relevant episode, rank `r` scores `1/log2(r+1)` and a miss scores 0.
+  It penalizes lower ranks less sharply than MRR.
+- **Mean latency:** arithmetic mean wall-clock search time per query.
+- **P95 latency:** the latency at or below which 95% of measured queries fall.
+- **95% confidence interval:** query-level bootstrap interval around each
+  quality metric; it describes uncertainty from this finite query sample.
 
 BM25 is also the `dp-evaluate` default. Evaluation outputs include a complete
 run manifest: query, corpus, index, and vector-file hashes; vector and reranker
@@ -269,6 +336,10 @@ settings; project package, Python, and platform versions; and Git commit/dirty
 state. Outputs remain generated artifacts under `artifacts/`; do not commit
 them. Publish benchmark results to MLflow, object storage, or another artifact
 store when they need to be shared.
+
+Each organic per-query result and checkpoint repeats its `tiktok_url`, so a
+reported success or failure can be traced back to the source question. Manual
+rows have no source URL and use a deterministic `manual_…` query ID.
 
 ## Data contracts
 
@@ -286,7 +357,7 @@ A segment record contains provenance, retrieval fields, and both time bases:
   "video_end_seconds": 167.1,
   "youtube_url": "https://www.youtube.com/watch?v=REAL_ID",
   "text_original": "[Đorđe Čvarkov] ...",
-  "text_semantic": "Košarka Đorđe Čvarkov ...",
+  "text_semantic": "[Epizoda Košarka] [Govore Đorđe Čvarkov, Boškić] ...",
   "text_normalized": "kosarka cvarkov ...",
   "speaker_keys": ["cvarkov", "boskic"],
   "source_segment_indices": [42, 43, 44]
@@ -297,23 +368,35 @@ A segment record contains provenance, retrieval fields, and both time bases:
 
 ```text
 drzavni_posao/
-  pipeline.py               # orchestration API
-  tracking.py               # MLflow parent/episode tracking
-  transcriber.py            # WhisperX ASR and alignment
-  diarizer.py               # pyannote speaker diarization
-  character_assigner.py     # voice-gallery character labels
+  transcription/
+    pipeline.py             # orchestration API
+    tracking.py             # MLflow parent/episode tracking
+    transcriber.py          # WhisperX ASR and alignment
+    diarizer.py             # pyannote speaker diarization
+    character_assigner.py   # voice-gallery character labels
+    comparison.py           # transcript comparison and alignment metrics
+    constants.py            # shared transcription constants
+    embedder.py             # speaker embeddings
+    episode.py              # episode metadata and catalogs
+    evaluation.py           # evaluation helpers
+    gallery.py              # speaker sample galleries
+    metrics.py              # transcription and assignment metrics
+    store.py                # media and artifact storage
+    transcript.py           # transcript model
+    vad_realigner.py         # VAD boundary realignment
   search/
     conform/                # transcript JSON -> corpus records
     indexing/               # BM25 and vector artifacts
     retrieval/              # query processing, search, fusion, reranking
     evaluation/             # judgments, metrics, evaluation runner
-    app/streamlit.py        # search interface
+    api/                    # HTTP API for the React frontend
+frontend/                   # React search interface
 data/
   youtube_episodes.json    # canonical episode catalog
-  evaluation_queries*.jsonl
   segments.jsonl           # generated, ignored
+  mlflow_exports/          # local MLflow run dumps, ignored
 artifacts/                  # generated indexes/results, ignored
-transcripts/                # generated pipeline output, ignored
+transcripts/                # pipeline scratch on Databricks, ignored
 tests/
 ```
 

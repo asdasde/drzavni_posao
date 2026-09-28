@@ -5,23 +5,32 @@ description = "Transcription, diarization, and character assignment for Državni
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "ipykernel>=7.3.0",
-    "jupyter>=1.1.1",
-    "mlflow-skinny>=3.14.0",
+    "datasets>=5.0.1",
     "numpy>=2.0.0",
     "pandas>=2.2.0",
     "pydantic>=2.13.4",
     "ruff>=0.15.20",
     "scikit-learn>=1.5.0",
-    "whisperx>=3.8.6",
 ]
 
 [project.optional-dependencies]
+# Transcription pipeline (notebooks, transcriber/diarizer). whisperx pulls in
+# torchcodec, which has no Linux aarch64 wheels — keep it out of the base deps
+# so the search/API Docker image can build on arm64.
+transcribe = [
+    "ipykernel>=7.3.0",
+    "jupyter>=1.1.1",
+    "mlflow-skinny>=3.14.0",
+    "whisperx>=3.8.6",
+]
 search = [
     # 5.3+ imports torchcodec eagerly and only guards against ImportError/OSError,
     # so a torchcodec that cannot find FFmpeg (RuntimeError) breaks text search.
     "sentence-transformers>=3.4.0,<5.3",
-    "streamlit>=1.42.0",
+]
+api = [
+    "fastapi>=0.115",
+    "uvicorn>=0.30",
 ]
 test = [
     "pytest>=8.3.0",
@@ -33,6 +42,7 @@ dp-build-bm25 = "drzavni_posao.search.indexing.bm25:main"
 dp-build-vectors = "drzavni_posao.search.indexing.vector:main"
 dp-search = "drzavni_posao.search.retrieval.engine:main"
 dp-evaluate = "drzavni_posao.search.evaluation.runner:main"
+dp-serve = "drzavni_posao.search.api.app:main"
 
 [build-system]
 requires = ["setuptools>=75"]
