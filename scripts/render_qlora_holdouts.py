@@ -15,6 +15,8 @@ import re
 from pathlib import Path
 from typing import Any
 
+from drzavni_posao.transcription.episode import episode_order_key
+
 
 TURN_RE = re.compile(r"\[([^\]]+)\]\s*")
 TEXT_FIELDS = ("reference", "base", "qlora")
@@ -89,7 +91,12 @@ def render_all(input_dir: Path, output_dir: Path) -> Path:
         f"Rendered from `{input_dir}`.",
         "",
     ]
-    for episode_key, item in sorted(items.items(), key=_episode_sort_key):
+    for episode_key, item in sorted(
+        items.items(),
+        key=lambda item: episode_order_key(
+            int(item[0]) if item[0].isdigit() else None, item[0]
+        ),
+    ):
         filename = _episode_filename(episode_key)
         (output_dir / filename).write_text(
             render_episode(episode_key, item),
@@ -115,11 +122,6 @@ def _episode_filename(episode_key: str) -> str:
     if not slug:
         raise ValueError(f"Cannot create a filename for episode {episode_key!r}")
     return f"episode-{slug}.md"
-
-
-def _episode_sort_key(item: tuple[str, dict[str, Any]]) -> tuple[int, int | str]:
-    episode_key = item[0]
-    return (0, int(episode_key)) if episode_key.isdigit() else (1, episode_key)
 
 
 def main() -> None:

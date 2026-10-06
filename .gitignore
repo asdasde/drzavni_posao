@@ -15,6 +15,10 @@ wheels/
 
 # Editor/OS
 .idea/
+.fuse/
+
+# Coursework (seminar paper, LaTeX build, one-off analysis scripts)
+seminarski/
 
 # Generated data and artifacts
 artifacts/
