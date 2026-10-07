@@ -1,6 +1,6 @@
 import unittest
 
-from drzavni_posao.generation.dataset import SFTDatasetBuilder
+from drzavni_posao.generation.qlora.dataset import SFTDatasetBuilder
 
 
 class FixedLengthTokenizer:

@@ -1,6 +1,6 @@
 import unittest
 
-from drzavni_posao.generation.prompt import (
+from drzavni_posao.generation.qlora.prompt import (
     EPISODE_SYSTEM_PROMPT,
     build_episode_messages,
 )

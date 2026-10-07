@@ -3,8 +3,8 @@ from contextlib import contextmanager
 
 import torch
 
-from drzavni_posao.generation.inference import generate_episode
-from drzavni_posao.generation.prompt import EPISODE_SYSTEM_PROMPT
+from drzavni_posao.generation.qlora.inference import generate_episode
+from drzavni_posao.generation.qlora.prompt import EPISODE_SYSTEM_PROMPT
 
 
 class GenerationInferenceTests(unittest.TestCase):
