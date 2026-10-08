@@ -11,6 +11,7 @@ from ..transcription.transcript import Transcript
 SPLITS = ("train", "validation", "test")
 _WORD_RE = re.compile(r"[^\W_]+(?:['’][^\W_]+)?", re.UNICODE)
 _DIGIT_RUN_RE = re.compile(r"\d+")
+LONG_TURN_ISSUE = "single_turn_gt_300_words"
 
 
 class TranscriptQualityError(ValueError):
@@ -48,6 +49,10 @@ def build_pair(
         "premise": premise,
         "dialogue": dialogue,
     }
+
+
+def transcript_quality_issues(transcript: Transcript) -> list[str]:
+    return _prepare_transcript(transcript)[1]
 
 
 def _prepare_transcript(transcript: Transcript) -> tuple[Transcript, list[str]]:
@@ -105,7 +110,7 @@ def _find_transcript_quality_issues(
         max((len(_words(segment["text"])) for segment in collapsed.segments), default=0)
         > 300
     ):
-        issues.append("single_turn_gt_300_words")
+        issues.append(LONG_TURN_ISSUE)
 
     full_text = "\n".join(texts)
     nonspace = [character for character in full_text if not character.isspace()]
