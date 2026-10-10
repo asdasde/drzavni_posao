@@ -3,6 +3,7 @@
 import argparse
 import math
 import random
+import time
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, fields
 from pathlib import Path
@@ -51,19 +52,19 @@ class TrainConfig:
     max_context_chars: int = 1000
     premise_mode: str = "none"
     bpe_vocab_size: int | None = None
-    batch_size: int = 32
-    learning_rate: float = 2e-3
+    batch_size: int = 128
+    learning_rate: float = 3e-3
     weight_decay: float = 0.01
     grad_clip: float = 1.0
     epochs: int = 20
     patience: int = 3
     seed: int = 0
+    num_workers: int = 4
+    log_every: int = 100
 
 
 def default_device() -> str:
-    if torch.cuda.is_available():
-        return "cuda"
-    return "mps" if torch.backends.mps.is_available() else "cpu"
+    return "cuda" if torch.cuda.is_available() else "cpu"
 
 
 def masked_nll(network: torch.nn.Module, batch: dict[str, torch.Tensor]) -> torch.Tensor:
@@ -97,14 +98,18 @@ def evaluate(
     characters: int,
     batch_size: int,
     device: str,
+    num_workers: int = 0,
 ) -> float:
+    """BPC in full precision, so runs stay comparable with each other and the n-grams."""
     network.eval()
     lengths = _lengths(dataset)
     order = sorted(range(len(dataset)), key=lengths.__getitem__)
     batches = [order[i : i + batch_size] for i in range(0, len(order), batch_size)]
-    loader = DataLoader(dataset, batch_sampler=batches, collate_fn=collate_windows)
-    total = sum(masked_nll(network, _to(batch, device)).item() for batch in loader)
-    return bits_per_character(total, characters)
+    total = sum(
+        masked_nll(network, _to(batch, device))
+        for batch in _loader(dataset, batches, num_workers)
+    )
+    return bits_per_character(float(total), characters)
 
 
 def train(
@@ -112,9 +117,13 @@ def train(
     episodes: list[dict],
     device: str = "cpu",
     on_epoch: Callable[[int, dict[str, float]], None] | None = None,
+    on_step: Callable[[int, dict[str, float]], None] | None = None,
 ) -> tuple[NeuralLM, dict[str, float]]:
     """Train on the train split, stop early on validation BPC, report test BPC.
 
+    On CUDA the training steps run in fp16 autocast with loss scaling; autocast
+    runs cuDNN recurrent layers in fp16 whatever dtype is requested. *on_step*
+    gets the recent bits per token and throughput every *log_every* batches.
     The returned model holds the weights of the best validation epoch.
     """
     if config.premise_mode == "encoder":
@@ -141,34 +150,58 @@ def train(
         network.parameters(), lr=config.learning_rate, weight_decay=config.weight_decay
     )
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5, patience=0)
+    amp = torch.device(device).type == "cuda"
+    scaler = torch.amp.GradScaler("cuda", enabled=amp)
     train_lengths = _lengths(datasets["train"])
 
-    best_bpc, best_state, stale = math.inf, None, 0
+    best_bpc, best_state, stale, step = math.inf, None, 0, 0
     for epoch in range(1, config.epochs + 1):
         network.train()
-        train_nll = 0.0
-        loader = DataLoader(
-            datasets["train"],
-            batch_sampler=length_batches(train_lengths, config.batch_size, rng),
-            collate_fn=collate_windows,
-        )
-        for batch in loader:
+        train_nll = torch.zeros((), device=device)
+        recent_nll, recent_targets = torch.zeros((), device=device), torch.zeros((), device=device)
+        recent_tokens, started = 0, time.perf_counter()
+        batches = length_batches(train_lengths, config.batch_size, rng)
+        for batch in _loader(datasets["train"], batches, config.num_workers):
+            recent_tokens += int(batch["lengths"].sum())
             batch = _to(batch, device)
-            nll = masked_nll(network, batch)
+            with torch.autocast("cuda", dtype=torch.float16, enabled=amp):
+                nll = masked_nll(network, batch)
+            targets = batch["loss_mask"].sum()
             optimizer.zero_grad()
-            (nll / batch["loss_mask"].sum()).backward()
+            scaler.scale(nll / targets).backward()
+            scaler.unscale_(optimizer)
             torch.nn.utils.clip_grad_norm_(network.parameters(), config.grad_clip)
-            optimizer.step()
-            train_nll += nll.item()
+            scaler.step(optimizer)
+            scaler.update()
+            train_nll += nll.detach()
+            recent_nll += nll.detach()
+            recent_targets += targets
+            step += 1
+            if on_step is not None and step % config.log_every == 0:
+                on_step(
+                    step,
+                    {
+                        "train_bits_per_token": float(recent_nll / recent_targets) / math.log(2),
+                        "tokens_per_second": recent_tokens / (time.perf_counter() - started),
+                    },
+                )
+                recent_nll.zero_()
+                recent_targets.zero_()
+                recent_tokens, started = 0, time.perf_counter()
         validation_bpc = evaluate(
-            network, datasets["validation"], characters["validation"], config.batch_size, device
+            network,
+            datasets["validation"],
+            characters["validation"],
+            config.batch_size,
+            device,
+            config.num_workers,
         )
         scheduler.step(validation_bpc)
         if on_epoch is not None:
             on_epoch(
                 epoch,
                 {
-                    "train_bpc": bits_per_character(train_nll, characters["train"]),
+                    "train_bpc": bits_per_character(float(train_nll), characters["train"]),
                     "validation_bpc": validation_bpc,
                     "learning_rate": optimizer.param_groups[0]["lr"],
                 },
@@ -185,7 +218,12 @@ def train(
     results = {
         "validation_bpc": best_bpc,
         "test_bpc": evaluate(
-            network, datasets["test"], characters["test"], config.batch_size, device
+            network,
+            datasets["test"],
+            characters["test"],
+            config.batch_size,
+            device,
+            config.num_workers,
         ),
         "epochs": epoch,
         "parameters": sum(p.numel() for p in network.parameters()),
@@ -224,8 +262,24 @@ def _lengths(dataset: TurnWindowDataset) -> list[int]:
     return [len(dataset.example(index)["input_ids"]) for index in range(len(dataset))]
 
 
+def _loader(
+    dataset: TurnWindowDataset, batches: list[list[int]], num_workers: int
+) -> DataLoader:
+    return DataLoader(
+        dataset,
+        batch_sampler=batches,
+        collate_fn=collate_windows,
+        num_workers=num_workers,
+        pin_memory=torch.cuda.is_available(),
+    )
+
+
 def _to(batch: dict[str, torch.Tensor], device: str) -> dict[str, torch.Tensor]:
-    return {key: value.to(device) for key, value in batch.items()}
+    return {key: value.to(device, non_blocking=True) for key, value in batch.items()}
+
+
+def _format(metrics: dict[str, float]) -> str:
+    return ", ".join(f"{k} {v:.4g}" for k, v in metrics.items())
 
 
 def _argument_type(field) -> Callable[[str], object]:
@@ -254,9 +308,8 @@ def main() -> None:
         config,
         episodes,
         args.device,
-        on_epoch=lambda epoch, metrics: print(
-            f"epoch {epoch}: " + ", ".join(f"{k} {v:.4g}" for k, v in metrics.items())
-        ),
+        on_epoch=lambda epoch, metrics: print(f"epoch {epoch}: {_format(metrics)}"),
+        on_step=lambda step, metrics: print(f"  step {step}: {_format(metrics)}"),
     )
     print(results)
 

@@ -165,6 +165,7 @@ class CheckpointTests(unittest.TestCase):
                     context_turns=1,
                     epochs=1,
                     bpe_vocab_size=bpe_vocab_size,
+                    num_workers=0,
                 )
                 model, _ = train(config, episodes)
                 history = [model.vocab.ids["[Boskic]"], *model.vocab.encode("Ima")]
@@ -196,11 +197,20 @@ class TrainTests(unittest.TestCase):
             learning_rate=0.02,
             epochs=60,
             patience=60,
+            num_workers=0,
+            log_every=10,
         )
-        epochs = []
+        epochs, steps = [], []
 
-        model, results = train(config, episodes * 4, on_epoch=lambda e, m: epochs.append(m))
+        model, results = train(
+            config,
+            episodes * 4,
+            on_epoch=lambda e, m: epochs.append(m),
+            on_step=lambda s, m: steps.append(m),
+        )
 
+        self.assertEqual(len(steps), 60 * 4 // 10)
+        self.assertLess(steps[-1]["train_bits_per_token"], steps[0]["train_bits_per_token"])
         self.assertLess(results["validation_bpc"], 0.5 * math.log2(len(model.vocab)))
         self.assertLess(epochs[-1]["train_bpc"], epochs[0]["train_bpc"])
         self.assertEqual(set(results), {"validation_bpc", "test_bpc", "epochs", "parameters"})
