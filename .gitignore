@@ -38,6 +38,7 @@ mlflow.db
 !notebooks/label_characters.ipynb
 !notebooks/listen_labels.ipynb
 !notebooks/validate_alignment.ipynb
+!notebooks/lstm-training.ipynb
 !notebooks/pipeline.ipynb
 !notebooks/large-v3-transcription.ipynb
 !notebooks/large-v3-transcription-assignment-nb.ipynb

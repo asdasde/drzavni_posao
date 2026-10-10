@@ -30,6 +30,11 @@ search = [
     # so a torchcodec that cannot find FFmpeg (RuntimeError) breaks text search.
     "sentence-transformers>=3.4.0,<5.3",
 ]
+lstm = [
+    "mlflow-skinny>=3.14.0",
+    "tokenizers>=0.22",
+    "torch>=2.8",
+]
 api = [
     "fastapi>=0.115",
     "uvicorn>=0.30",

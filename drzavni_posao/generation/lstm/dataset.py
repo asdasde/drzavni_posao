@@ -69,6 +69,21 @@ def encode_episode(episode: dict, vocab: Vocabulary) -> tuple[list[int], list[bo
     return ids, scored
 
 
+def roles_for(ids: Sequence[int], vocab: Vocabulary) -> list[int]:
+    """The role of every token, as TurnWindowDataset assigns it.
+
+    A speaker tag, `<start>` or `<premise>` sets the role, and the tokens after it
+    keep that role up to the next such token.
+    """
+    setters = {vocab.ids[f"[{s}]"]: _ROLE_IDS[s] for s in CORE_CHARACTERS}
+    setters |= {vocab.ids[token]: _ROLE_IDS[token] for token in (PAD, START, PREMISE)}
+    roles, role = [], _ROLE_IDS[PAD]
+    for token in ids:
+        role = setters.get(token, role)
+        roles.append(role)
+    return roles
+
+
 @dataclass(frozen=True, slots=True)
 class _Turn:
     role: int

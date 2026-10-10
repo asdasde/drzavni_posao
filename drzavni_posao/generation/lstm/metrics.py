@@ -1,6 +1,12 @@
 """Model-agnostic language-model metrics."""
 
 import math
+from collections.abc import Iterable
+
+
+def scored_characters(episodes: Iterable[dict]) -> int:
+    """Every turn's text plus its closing newline: what BPC is spread over."""
+    return sum(len(turn["text"]) + 1 for e in episodes for turn in e["turns"])
 
 
 def bits_per_character(total_nll: float, characters: int) -> float:

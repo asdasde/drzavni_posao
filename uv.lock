@@ -843,6 +843,11 @@ api = [
     { name = "fastapi" },
     { name = "uvicorn" },
 ]
+lstm = [
+    { name = "mlflow-skinny" },
+    { name = "tokenizers" },
+    { name = "torch" },
+]
 search = [
     { name = "sentence-transformers" },
 ]
@@ -863,6 +868,7 @@ requires-dist = [
     { name = "fastapi", marker = "extra == 'api'", specifier = ">=0.115" },
     { name = "ipykernel", marker = "extra == 'transcribe'", specifier = ">=7.3.0" },
     { name = "jupyter", marker = "extra == 'transcribe'", specifier = ">=1.1.1" },
+    { name = "mlflow-skinny", marker = "extra == 'lstm'", specifier = ">=3.14.0" },
     { name = "mlflow-skinny", marker = "extra == 'transcribe'", specifier = ">=3.14.0" },
     { name = "numpy", specifier = ">=2.0.0" },
     { name = "pandas", specifier = ">=2.2.0" },
@@ -872,10 +878,12 @@ requires-dist = [
     { name = "scikit-learn", specifier = ">=1.5.0" },
     { name = "sentence-transformers", marker = "extra == 'search'", specifier = ">=3.4.0,<5.3" },
     { name = "stanza", specifier = ">=1.10,<2" },
+    { name = "tokenizers", marker = "extra == 'lstm'", specifier = ">=0.22" },
+    { name = "torch", marker = "extra == 'lstm'", specifier = ">=2.8" },
     { name = "uvicorn", marker = "extra == 'api'", specifier = ">=0.30" },
     { name = "whisperx", marker = "extra == 'transcribe'", specifier = ">=3.8.6" },
 ]
-provides-extras = ["transcribe", "search", "api", "test"]
+provides-extras = ["transcribe", "search", "lstm", "api", "test"]
 
 [[package]]
 name = "einops"

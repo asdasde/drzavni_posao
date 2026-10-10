@@ -7,6 +7,7 @@ from drzavni_posao.generation.lstm.dataset import (
     CharVocabulary,
     TurnWindowDataset,
     collate_windows,
+    roles_for,
 )
 
 
@@ -110,6 +111,19 @@ class TurnWindowDatasetTests(unittest.TestCase):
             + [ROLES.index("Boskic")] * len("TIma?\n")
             + [ROLES.index("Djordje Cvarkov")] * len("TNema."),
         )
+
+    def test_roles_can_be_recovered_from_token_ids(self):
+        for premise_mode in ("none", "prefix"):
+            dataset = TurnWindowDataset(
+                [EPISODE], self.vocab, context_turns=2, premise_mode=premise_mode
+            )
+            for index in range(len(dataset)):
+                with self.subTest(premise_mode=premise_mode, index=index):
+                    example = dataset.example(index)
+
+                    self.assertEqual(
+                        roles_for(example["input_ids"], self.vocab), example["roles"]
+                    )
 
     def test_rejects_unknown_premise_mode(self):
         with self.assertRaisesRegex(ValueError, "premise_mode"):

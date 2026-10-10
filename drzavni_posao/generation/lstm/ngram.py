@@ -9,10 +9,10 @@ import numpy as np
 from numpy.lib.stride_tricks import sliding_window_view
 
 from ...transcription.constants import CORE_CHARACTERS
-from .bpe import BpeVocabulary
-from .dataset import CharVocabulary, Vocabulary, encode_turn
+from .bpe import build_vocabulary
+from .dataset import Vocabulary, encode_turn
 from .language_model import LanguageModel
-from .metrics import bits_per_character
+from .metrics import bits_per_character, scored_characters
 from .prepare import group_by_split, read_jsonl
 
 
@@ -208,15 +208,8 @@ def main() -> None:
     args = parser.parse_args()
 
     by_split = group_by_split(read_jsonl(args.episodes))
-    if args.bpe_vocab_size is None:
-        vocab = CharVocabulary()
-    else:
-        train_texts = (turn["text"] for e in by_split["train"] for turn in e["turns"])
-        vocab = BpeVocabulary.train(train_texts, args.bpe_vocab_size)
-    characters = {
-        split: sum(len(turn["text"]) + 1 for e in split_episodes for turn in e["turns"])
-        for split, split_episodes in by_split.items()
-    }
+    vocab = build_vocabulary(by_split["train"], args.bpe_vocab_size)
+    characters = {split: scored_characters(group) for split, group in by_split.items()}
     rng = np.random.default_rng(0)
 
     print("order   global_val  global_test  weight  mixture_val  mixture_test")
@@ -239,7 +232,7 @@ def main() -> None:
             tag = f"[{speaker}]"
             for _ in range(args.samples):
                 ids = model.generate([vocab.ids[tag]], vocab.ids["\n"], rng, args.temperature)
-                print(f"  {tag} {vocab.decode(ids).rstrip()}")
+                print(f"  {tag} {vocab.decode(ids).strip()}")
 
 
 if __name__ == "__main__":
