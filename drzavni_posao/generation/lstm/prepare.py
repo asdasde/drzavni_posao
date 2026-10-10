@@ -13,6 +13,7 @@ from ...transcription.store import DEFAULT_CATALOG_PATH, MediaStore
 from ...transcription.transcript import Transcript
 from ..dataset import (
     LONG_TURN_ISSUE,
+    SPLITS,
     assign_folds,
     select_splits,
     transcript_quality_issues,
@@ -84,6 +85,10 @@ def read_jsonl(path: Path) -> list[dict]:
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
 
 
+def group_by_split(episodes: list[dict]) -> dict[str, list[dict]]:
+    return {split: [e for e in episodes if e["split"] == split] for split in SPLITS}
+
+
 def prepare_episodes(
     *,
     transcripts_dir: Path,
@@ -138,16 +143,11 @@ def prepare_episodes(
         "stats": dict(stats),
         "splits": {
             split: {
-                "episodes": sum(r["split"] == split for r in records),
-                "turns": sum(len(r["turns"]) for r in records if r["split"] == split),
-                "characters": sum(
-                    len(t["text"])
-                    for r in records
-                    if r["split"] == split
-                    for t in r["turns"]
-                ),
+                "episodes": len(group),
+                "turns": sum(len(r["turns"]) for r in group),
+                "characters": sum(len(t["text"]) for r in group for t in r["turns"]),
             }
-            for split in ("train", "validation", "test")
+            for split, group in group_by_split(records).items()
         },
     }
     return records, manifest

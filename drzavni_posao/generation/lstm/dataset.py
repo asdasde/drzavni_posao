@@ -15,21 +15,35 @@ PAD = "<pad>"
 START = "<start>"
 PREMISE = "<premise>"
 SPEAKER_TAGS = tuple(f"[{speaker}]" for speaker in CORE_CHARACTERS)
+SPECIAL_TOKENS = (PAD, START, PREMISE, *SPEAKER_TAGS, "\n")
 ROLES = (PAD, PREMISE, START, *CORE_CHARACTERS)
 PREMISE_MODES = ("none", "prefix", "encoder")
 
 _ROLE_IDS = {role: index for index, role in enumerate(ROLES)}
 
 
-class CharVocabulary:
-    """Characters plus atomic speaker tags; id 0 is padding."""
+class Vocabulary:
+    """Tokens and their ids, starting with SPECIAL_TOKENS so id 0 is padding."""
 
-    def __init__(self) -> None:
-        self.tokens = (PAD, START, PREMISE, *SPEAKER_TAGS, "\n", *sorted(ALPHABET))
+    def __init__(self, tokens: Iterable[str]) -> None:
+        self.tokens = tuple(tokens)
         self.ids = {token: index for index, token in enumerate(self.tokens)}
 
     def __len__(self) -> int:
         return len(self.tokens)
+
+    def encode(self, text: str) -> list[int]:
+        raise NotImplementedError
+
+    def decode(self, ids: Iterable[int]) -> str:
+        raise NotImplementedError
+
+
+class CharVocabulary(Vocabulary):
+    """Characters plus atomic speaker tags."""
+
+    def __init__(self) -> None:
+        super().__init__((*SPECIAL_TOKENS, *sorted(ALPHABET)))
 
     def encode(self, text: str) -> list[int]:
         return [self.ids[character] for character in text]
@@ -37,6 +51,22 @@ class CharVocabulary:
     def decode(self, ids: Iterable[int]) -> str:
         tokens = (self.tokens[index] for index in ids)
         return "".join(f"{t} " if t in SPEAKER_TAGS else t for t in tokens)
+
+
+def encode_turn(turn: dict, vocab: Vocabulary) -> tuple[list[int], list[bool]]:
+    """Speaker tag, text, newline; the mask marks the scored text and newline."""
+    text = [*vocab.encode(turn["text"]), vocab.ids["\n"]]
+    return [vocab.ids[f"[{turn['speaker']}]"], *text], [False] + [True] * len(text)
+
+
+def encode_episode(episode: dict, vocab: Vocabulary) -> tuple[list[int], list[bool]]:
+    """The whole episode as one stream of encoded turns after a start token."""
+    ids, scored = [vocab.ids[START]], [False]
+    for turn in episode["turns"]:
+        turn_ids, turn_scored = encode_turn(turn, vocab)
+        ids += turn_ids
+        scored += turn_scored
+    return ids, scored
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,7 +87,7 @@ class TurnWindowDataset(Dataset):
     def __init__(
         self,
         episodes: Sequence[dict],
-        vocab: CharVocabulary,
+        vocab: Vocabulary,
         *,
         context_turns: int,
         max_context_chars: int = 1000,
