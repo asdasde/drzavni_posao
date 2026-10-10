@@ -258,6 +258,24 @@ def load_checkpoint(path: Path, device: str = "cpu") -> tuple[NeuralLM, TrainCon
     return NeuralLM(network.to(device), vocab, device), config
 
 
+def sample_turns(
+    model: NeuralLM, rng: np.random.Generator, per_speaker: int, temperature: float = 1.0
+) -> list[str]:
+    """*per_speaker* sampled turns for every core character, each after its tag."""
+    newline = model.vocab.ids["\n"]
+    samples = []
+    for speaker in CORE_CHARACTERS:
+        tag = f"[{speaker}]"
+        for _ in range(per_speaker):
+            ids = model.generate([model.vocab.ids[tag]], newline, rng, temperature)
+            samples.append(f"{tag} {model.vocab.decode(ids).strip()}")
+    return samples
+
+
+def format_metrics(metrics: dict[str, float]) -> str:
+    return ", ".join(f"{k} {v:.4g}" for k, v in metrics.items())
+
+
 def _lengths(dataset: TurnWindowDataset) -> list[int]:
     return [len(dataset.example(index)["input_ids"]) for index in range(len(dataset))]
 
@@ -276,10 +294,6 @@ def _loader(
 
 def _to(batch: dict[str, torch.Tensor], device: str) -> dict[str, torch.Tensor]:
     return {key: value.to(device, non_blocking=True) for key, value in batch.items()}
-
-
-def _format(metrics: dict[str, float]) -> str:
-    return ", ".join(f"{k} {v:.4g}" for k, v in metrics.items())
 
 
 def _argument_type(field) -> Callable[[str], object]:
@@ -308,18 +322,12 @@ def main() -> None:
         config,
         episodes,
         args.device,
-        on_epoch=lambda epoch, metrics: print(f"epoch {epoch}: {_format(metrics)}"),
-        on_step=lambda step, metrics: print(f"  step {step}: {_format(metrics)}"),
+        on_epoch=lambda epoch, metrics: print(f"epoch {epoch}: {format_metrics(metrics)}"),
+        on_step=lambda step, metrics: print(f"  step {step}: {format_metrics(metrics)}"),
     )
     print(results)
-
-    rng = np.random.default_rng(config.seed)
-    newline = model.vocab.ids["\n"]
-    for speaker in CORE_CHARACTERS:
-        tag = f"[{speaker}]"
-        for _ in range(args.samples):
-            ids = model.generate([model.vocab.ids[tag]], newline, rng)
-            print(f"  {tag} {model.vocab.decode(ids).strip()}")
+    for sample in sample_turns(model, np.random.default_rng(config.seed), args.samples):
+        print(f"  {sample}")
 
 
 if __name__ == "__main__":
