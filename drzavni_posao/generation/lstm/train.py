@@ -61,6 +61,7 @@ class TrainConfig:
     seed: int = 0
     num_workers: int = 4
     log_every: int = 100
+    amp: bool = True
 
 
 def default_device() -> str:
@@ -121,9 +122,10 @@ def train(
 ) -> tuple[NeuralLM, dict[str, float]]:
     """Train on the train split, stop early on validation BPC, report test BPC.
 
-    On CUDA the training steps run in fp16 autocast with loss scaling; autocast
-    runs cuDNN recurrent layers in fp16 whatever dtype is requested. *on_step*
-    gets the recent bits per token and throughput every *log_every* batches.
+    With *amp* on CUDA the training steps run in fp16 autocast with loss scaling;
+    autocast runs cuDNN recurrent layers in fp16 whatever dtype is requested.
+    *on_step* gets the recent bits per token, throughput and, with amp, the loss
+    scale every *log_every* batches.
     The returned model holds the weights of the best validation epoch.
     """
     if config.premise_mode == "encoder":
@@ -150,7 +152,7 @@ def train(
         network.parameters(), lr=config.learning_rate, weight_decay=config.weight_decay
     )
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5, patience=0)
-    amp = torch.device(device).type == "cuda"
+    amp = config.amp and torch.device(device).type == "cuda"
     scaler = torch.amp.GradScaler("cuda", enabled=amp)
     train_lengths = _lengths(datasets["train"])
 
@@ -178,13 +180,13 @@ def train(
             recent_targets += targets
             step += 1
             if on_step is not None and step % config.log_every == 0:
-                on_step(
-                    step,
-                    {
-                        "train_bits_per_token": float(recent_nll / recent_targets) / math.log(2),
-                        "tokens_per_second": recent_tokens / (time.perf_counter() - started),
-                    },
-                )
+                metrics = {
+                    "train_bits_per_token": float(recent_nll / recent_targets) / math.log(2),
+                    "tokens_per_second": recent_tokens / (time.perf_counter() - started),
+                }
+                if amp:
+                    metrics["loss_scale"] = scaler.get_scale()
+                on_step(step, metrics)
                 recent_nll.zero_()
                 recent_targets.zero_()
                 recent_tokens, started = 0, time.perf_counter()
