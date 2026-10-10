@@ -96,6 +96,11 @@ class NetworkTests(unittest.TestCase):
 
         self.assertIs(network.output.weight, network.token_embedding.weight)
 
+    def test_rejects_attention_heads_without_fused_kernel_alignment(self):
+        for cell in ("lstm", "transformer"):
+            with self.subTest(cell=cell), self.assertRaises(ValueError):
+                tiny_network(self.vocab, cell=cell, hidden_size=472, attention_heads=4)
+
     def test_locked_dropout_drops_the_same_features_at_every_step(self):
         network = tiny_network(self.vocab, locked_dropout=True, dropout=0.5).train()
         dropped = network.dropout(torch.ones(2, 7, 16)) == 0

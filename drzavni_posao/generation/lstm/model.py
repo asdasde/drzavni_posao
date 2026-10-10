@@ -200,6 +200,11 @@ def build_network(
     tie_weights: bool,
     locked_dropout: bool,
 ) -> _Network:
+    if attention_heads and (hidden_size % attention_heads or hidden_size // attention_heads % 8):
+        raise ValueError(
+            "the attention head size must be a multiple of 8, or CUDA falls back to "
+            "attention that materialises every score matrix"
+        )
     if cell == "transformer":
         if residual or locked_dropout:
             raise ValueError("the transformer is always residual and has no locked dropout")
