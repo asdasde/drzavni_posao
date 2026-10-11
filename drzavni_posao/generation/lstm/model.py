@@ -37,7 +37,10 @@ class CausalSelfAttention(nn.Module):
 
     The output projection starts at zero: a fresh attention layer adds a near
     constant average about 20x larger than the LSTM outputs, which drowns them
-    and leaves training stuck at unigram loss (for good under fp16).
+    and stalls training at unigram loss for the first few hundred steps.
+
+    It always runs in fp32: under fp16 autocast over LSTM outputs, training
+    never leaves unigram loss.
     """
 
     def __init__(self, size: int, heads: int, dropout: float) -> None:
@@ -47,9 +50,10 @@ class CausalSelfAttention(nn.Module):
         nn.init.zeros_(self.attention.out_proj.weight)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        y = self.norm(x)
-        mask = nn.Transformer.generate_square_subsequent_mask(x.size(1), device=x.device)
-        return self.attention(y, y, y, attn_mask=mask, need_weights=False, is_causal=True)[0]
+        with torch.autocast(x.device.type, enabled=False):
+            y = self.norm(x.float())
+            mask = nn.Transformer.generate_square_subsequent_mask(x.size(1), device=x.device)
+            return self.attention(y, y, y, attn_mask=mask, need_weights=False, is_causal=True)[0]
 
 
 class _Network(nn.Module):

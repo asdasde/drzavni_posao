@@ -109,6 +109,13 @@ class NetworkTests(unittest.TestCase):
 
         torch.testing.assert_close(logits, plain)
 
+    def test_attention_runs_in_full_precision_under_autocast(self):
+        network = tiny_network(self.vocab, attention_heads=2)
+        with torch.autocast("cpu", dtype=torch.bfloat16):
+            output = network.attention(torch.randn(2, 5, 16, dtype=torch.bfloat16))
+
+        self.assertEqual(output.dtype, torch.float32)
+
     def test_locked_dropout_drops_the_same_features_at_every_step(self):
         network = tiny_network(self.vocab, locked_dropout=True, dropout=0.5).train()
         dropped = network.dropout(torch.ones(2, 7, 16)) == 0
