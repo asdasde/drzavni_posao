@@ -101,6 +101,14 @@ class NetworkTests(unittest.TestCase):
             with self.subTest(cell=cell), self.assertRaises(ValueError):
                 tiny_network(self.vocab, cell=cell, hidden_size=472, attention_heads=4)
 
+    def test_attention_starts_as_a_no_op(self):
+        network = tiny_network(self.vocab, attention_heads=2).eval()
+        logits, _ = network(self.batch["input_ids"], self.batch["roles"])
+        network.attention = None
+        plain, _ = network(self.batch["input_ids"], self.batch["roles"])
+
+        torch.testing.assert_close(logits, plain)
+
     def test_locked_dropout_drops_the_same_features_at_every_step(self):
         network = tiny_network(self.vocab, locked_dropout=True, dropout=0.5).train()
         dropped = network.dropout(torch.ones(2, 7, 16)) == 0

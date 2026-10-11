@@ -33,12 +33,18 @@ class Dropout(nn.Module):
 
 
 class CausalSelfAttention(nn.Module):
-    """Pre-norm multi-head attention over the current and earlier positions."""
+    """Pre-norm multi-head attention over the current and earlier positions.
+
+    The output projection starts at zero: a fresh attention layer adds a near
+    constant average about 20x larger than the LSTM outputs, which drowns them
+    and leaves training stuck at unigram loss (for good under fp16).
+    """
 
     def __init__(self, size: int, heads: int, dropout: float) -> None:
         super().__init__()
         self.norm = nn.LayerNorm(size)
         self.attention = nn.MultiheadAttention(size, heads, dropout=dropout, batch_first=True)
+        nn.init.zeros_(self.attention.out_proj.weight)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         y = self.norm(x)
