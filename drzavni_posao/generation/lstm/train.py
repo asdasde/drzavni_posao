@@ -58,6 +58,7 @@ class TrainConfig:
     grad_clip: float = 1.0
     epochs: int = 20
     patience: int = 3
+    scheduler_patience: int = 0
     seed: int = 0
     num_workers: int = 4
     log_every: int = 100
@@ -151,7 +152,9 @@ def train(
     optimizer = torch.optim.AdamW(
         network.parameters(), lr=config.learning_rate, weight_decay=config.weight_decay
     )
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5, patience=0)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, factor=0.5, patience=config.scheduler_patience
+    )
     amp = config.amp and torch.device(device).type == "cuda"
     scaler = torch.amp.GradScaler("cuda", enabled=amp)
     train_lengths = _lengths(datasets["train"])
