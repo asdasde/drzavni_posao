@@ -21,6 +21,10 @@ from .metrics import bits_per_character, scored_characters
 from .model import NeuralLM, build_network
 from .prepare import group_by_split, read_jsonl
 
+# Loader workers otherwise hand every batch over as a file descriptor, and several
+# trainings in one process run out of them ("received 0 items of ancdata").
+torch.multiprocessing.set_sharing_strategy("file_system")
+
 
 NETWORK_FIELDS = (
     "cell",
