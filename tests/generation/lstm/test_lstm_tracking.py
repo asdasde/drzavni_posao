@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest import mock
 
 import mlflow
+import torch
 
 from drzavni_posao.generation.lstm import tracking
 from drzavni_posao.generation.lstm.train import TrainConfig
@@ -64,3 +65,22 @@ class TrackedRunTests(unittest.TestCase):
             self.assertEqual(len(list((volume / "checkpoints").glob("tiny-*.pt"))), 1)
             self.assertEqual(len(samples), len(CORE_CHARACTERS))
             self.assertTrue(samples[0].startswith(f"[{CORE_CHARACTERS[0]}]"))
+
+
+class RunQueueTests(unittest.TestCase):
+    def test_a_failed_run_does_not_stop_the_queue(self):
+        def fake_run(name, config):
+            if name == "broken":
+                raise torch.OutOfMemoryError("CUDA out of memory")
+            return {"test_bpc": 2.0}
+
+        with (
+            mock.patch.object(tracking, "tracked_run", side_effect=fake_run),
+            mock.patch("sys.stderr"),
+        ):
+            outcomes = tracking.run_queue(
+                [("broken", TrainConfig()), ("fine", TrainConfig())]
+            )
+
+        self.assertEqual(outcomes["fine"], {"test_bpc": 2.0})
+        self.assertTrue(outcomes["broken"].startswith("failed: OutOfMemoryError"))

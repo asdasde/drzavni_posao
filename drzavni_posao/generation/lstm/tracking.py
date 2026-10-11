@@ -1,11 +1,14 @@
 """One training run on Databricks, tracked in MLflow with a checkpoint on the volume."""
 
+import gc
+import traceback
 from collections.abc import Callable
 from dataclasses import asdict
 from pathlib import Path
 
 import mlflow
 import numpy as np
+import torch
 
 from .prepare import read_jsonl
 from .train import (
@@ -51,6 +54,26 @@ def tracked_run(
     print(results)
     print("\n".join(samples))
     return results
+
+
+def run_queue(runs: list[tuple[str, TrainConfig]]) -> dict[str, dict[str, float] | str]:
+    """Run each (name, config) in turn; a failure is reported and the queue goes on.
+
+    GPU memory is released between runs, so one run's OOM does not starve the next.
+    Cancelling the cell still stops the whole queue: KeyboardInterrupt is not caught.
+    """
+    outcomes: dict[str, dict[str, float] | str] = {}
+    for name, config in runs:
+        try:
+            outcomes[name] = tracked_run(name, config)
+        except Exception as error:
+            traceback.print_exc()
+            outcomes[name] = f"failed: {type(error).__name__}: {error}"
+        gc.collect()
+        torch.cuda.empty_cache()
+    for name, outcome in outcomes.items():
+        print(f"{name}: {outcome}")
+    return outcomes
 
 
 def _logger(label: str) -> Callable[[int, dict[str, float]], None]:
