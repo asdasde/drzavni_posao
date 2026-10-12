@@ -18,6 +18,7 @@ from drzavni_posao.generation.lstm.train import (
     TrainConfig,
     length_batches,
     load_checkpoint,
+    premise_bpc,
     save_checkpoint,
     train,
 )
@@ -234,6 +235,39 @@ class TrainTests(unittest.TestCase):
         self.assertLess(results["validation_bpc"], 0.5 * math.log2(len(model.vocab)))
         self.assertLess(epochs[-1]["train_bpc"], epochs[0]["train_bpc"])
         self.assertEqual(set(results), {"validation_bpc", "test_bpc", "epochs", "parameters"})
+
+
+class PremiseBpcTests(unittest.TestCase):
+    def test_a_wrong_premise_costs_a_model_that_reads_it(self):
+        def episode(drink, split):
+            turns = [{"speaker": "Boskic", "text": f"Ima {drink}?"}, *EPISODE["turns"][1:]]
+            return {"premise": drink.capitalize() + ".", "turns": turns, "split": split}
+
+        episodes = [
+            episode(drink, split)
+            for split in ("train", "validation", "test")
+            for drink in ("kafe", "caja")
+        ]
+        config = TrainConfig(
+            embedding_dim=8,
+            role_dim=4,
+            hidden_size=32,
+            num_layers=1,
+            dropout=0.0,
+            context_turns=2,
+            premise_mode="prefix",
+            batch_size=3,
+            learning_rate=0.01,
+            epochs=150,
+            patience=150,
+            num_workers=0,
+        )
+        model, results = train(config, episodes * 4)
+
+        bpc = premise_bpc(model, config, episodes)
+
+        self.assertAlmostEqual(bpc["own_premise_bpc"], results["test_bpc"], places=5)
+        self.assertGreater(bpc["wrong_premise_bpc"], bpc["own_premise_bpc"] + 0.1)
 
 
 if __name__ == "__main__":

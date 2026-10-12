@@ -263,6 +263,34 @@ def load_checkpoint(path: Path, device: str = "cpu") -> tuple[NeuralLM, TrainCon
     return NeuralLM(network.to(device), vocab, device), config
 
 
+def premise_bpc(
+    model: NeuralLM, config: TrainConfig, episodes: list[dict], batch_size: int = 128
+) -> dict[str, float]:
+    """Test BPC of a prefix-premise model with every episode's own premise and a wrong one.
+
+    The wrong premise is that of the test episode half the split away, so it never
+    comes from the neighbouring part of a multi-part story.
+    """
+    if config.premise_mode != "prefix":
+        raise ValueError("premise_bpc needs a model trained with premise_mode='prefix'")
+    test = group_by_split(episodes)["test"]
+    shift = len(test) // 2
+    wrong = [{**e, "premise": test[(i + shift) % len(test)]["premise"]} for i, e in enumerate(test)]
+    characters = scored_characters(test)
+
+    def bpc(group: list[dict]) -> float:
+        dataset = TurnWindowDataset(
+            group,
+            model.vocab,
+            context_turns=config.context_turns,
+            max_context_chars=config.max_context_chars,
+            premise_mode="prefix",
+        )
+        return evaluate(model.network, dataset, characters, batch_size, model.device)
+
+    return {"own_premise_bpc": bpc(test), "wrong_premise_bpc": bpc(wrong)}
+
+
 def sample_turns(
     model: NeuralLM, rng: np.random.Generator, per_speaker: int, temperature: float = 1.0
 ) -> list[str]:
