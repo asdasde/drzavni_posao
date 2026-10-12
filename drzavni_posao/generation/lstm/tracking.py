@@ -3,7 +3,7 @@
 import gc
 import traceback
 from collections.abc import Callable
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from pathlib import Path
 
 import mlflow
@@ -60,12 +60,14 @@ def run_queue(runs: list[tuple[str, TrainConfig]]) -> dict[str, dict[str, float]
     """Run each (name, config) in turn; a failure is reported and the queue goes on.
 
     GPU memory is released between runs, so one run's OOM does not starve the next.
+    Batches load in the main process: on serverless, after a few runs in one process
+    loader workers can no longer hand batches over ("Pin memory thread exited").
     Cancelling the cell still stops the whole queue: KeyboardInterrupt is not caught.
     """
     outcomes: dict[str, dict[str, float] | str] = {}
     for name, config in runs:
         try:
-            outcomes[name] = tracked_run(name, config)
+            outcomes[name] = tracked_run(name, replace(config, num_workers=0))
         except Exception as error:
             traceback.print_exc()
             outcomes[name] = f"failed: {type(error).__name__}: {error}"

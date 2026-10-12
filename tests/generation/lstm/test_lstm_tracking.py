@@ -70,6 +70,7 @@ class TrackedRunTests(unittest.TestCase):
 class RunQueueTests(unittest.TestCase):
     def test_a_failed_run_does_not_stop_the_queue(self):
         def fake_run(name, config):
+            self.assertEqual(config.num_workers, 0)
             if name == "broken":
                 raise torch.OutOfMemoryError("CUDA out of memory")
             return {"test_bpc": 2.0}
