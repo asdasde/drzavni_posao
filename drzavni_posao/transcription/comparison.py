@@ -18,6 +18,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .episode import episode_order_key
 from .transcript import Transcript
 
 logger = logging.getLogger(__name__)
@@ -282,9 +283,9 @@ def compare(key: str, reference: Transcript, hypothesis: Transcript) -> Comparis
     )
 
 
-def _episode_order(key: str) -> tuple[bool, int | str]:
+def _episode_order(key: str) -> tuple[bool, int, str]:
     """Sort numeric episode keys numerically, titled ones alphabetically after."""
-    return (not key.isdigit(), int(key) if key.isdigit() else key)
+    return episode_order_key(int(key) if key.isdigit() else None, key)
 
 
 def compare_all(

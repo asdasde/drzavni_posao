@@ -5,12 +5,14 @@ description = "Transcription, diarization, and character assignment for Državni
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "bertopic>=0.17.4",
     "datasets>=5.0.1",
     "numpy>=2.0.0",
     "pandas>=2.2.0",
     "pydantic>=2.13.4",
     "ruff>=0.15.20",
     "scikit-learn>=1.5.0",
+    "stanza>=1.10,<2",
 ]
 
 [project.optional-dependencies]
@@ -27,6 +29,11 @@ search = [
     # 5.3+ imports torchcodec eagerly and only guards against ImportError/OSError,
     # so a torchcodec that cannot find FFmpeg (RuntimeError) breaks text search.
     "sentence-transformers>=3.4.0,<5.3",
+]
+lstm = [
+    "mlflow-skinny>=3.14.0",
+    "tokenizers>=0.22",
+    "torch>=2.8",
 ]
 api = [
     "fastapi>=0.115",
@@ -50,6 +57,9 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 include = ["drzavni_posao", "drzavni_posao.*"]
+
+[tool.setuptools.package-data]
+"drzavni_posao.search.topics" = ["resources/*.csv", "resources/*.md"]
 
 [tool.ruff.lint.per-file-ignores]
 "notebooks/*.ipynb" = ["E402", "F401", "F821"]

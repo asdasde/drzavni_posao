@@ -25,7 +25,9 @@ uv sync --extra search --extra test
 uv sync --extra search --extra api
 ```
 
-The `search` extra installs Sentence Transformers. The
+Topic clustering (BERTopic, Stanza) ships in the base dependencies; it still
+needs the `search` extra for the embedding model. The `search` extra installs
+Sentence Transformers. The
 transcription pipeline's WhisperX, MLflow, and Jupyter dependencies live in the
 `transcribe` extra (WhisperX's torchcodec dependency has no Linux arm64 wheels,
 so keeping it optional lets the search API Docker image build on arm64).
@@ -198,6 +200,61 @@ order, model name and resolved snapshot revision, embedding dimension, E5
 prefix behavior, and format version. Loading rejects stale or differently
 ordered indexes after either normalized BM25 text or embedded semantic text
 changes.
+
+### Episode topic clustering
+
+Topics are found by the dialogue-chunk sweep. It embeds each episode's
+dialogue as non-overlapping sixteen-utterance chunks, utterance-weight-averages
+them into one vector per episode, bypasses UMAP, and compares direct spherical
+K-means across several topic counts:
+
+```bash
+uv run --extra search \
+  python scripts/run_dialogue_topic_sweep.py \
+  --segments data/segments_topics.jsonl
+```
+
+Point `--segments` at a **non-overlapping** corpus, produced by running
+`dp-segment` with `--overlap-utterances 0` (the default overlapping corpus is
+for search only; the sweep rejects it). Because the segments do not overlap,
+dialogue reconstruction is a plain concatenation — no de-duplication needed.
+
+The sweep writes per-K artifacts, stability diagnostics, and `summary.json`
+under the `--output-dir`. Each artifact contains topic terms, representative
+episodes, and per-episode assignments. Episode embeddings depend only on the
+corpus, model, and chunk size, so they are cached once under
+`artifacts/episode_embeddings/` (keyed by that identity) and reused across
+sweeps — changing `--utterances-per-chunk` builds a new cache entry rather than
+overwriting the old one. Pass `--pca-components 50` to mean-center and reduce
+the episode vectors before clustering; `--pca-whiten` additionally equalizes
+retained component variance.
+
+Topic labels are the highest-weight c-TF-IDF terms; they are descriptions of
+clusters, not ground truth categories. Character names and common Serbian
+conversation words are excluded by default, together with the 1,241-entry
+Serbian Stop Word Dictionary. Supply additional corpus-specific words one per
+line with `--stop-words path/to/stopwords.txt`. The bundled dictionary is
+CC BY-NC-SA 4.0 and restricted to non-commercial use; attribution and source
+details are in `drzavni_posao/search/topics/resources/SERBIAN_STOPWORDS_NOTICE.md`.
+
+Serbian lemmatization can improve only the c-TF-IDF terms and labels while
+leaving episode embeddings and cluster assignments unchanged:
+
+```bash
+uv run --extra search \
+  python scripts/run_dialogue_topic_sweep.py \
+  --pca-components 50 \
+  --lemmatize-serbian \
+  --allow-lemma-download \
+  --lemma-cache artifacts/serbian_lemma_texts.json \
+  --output-dir artifacts/dialogue_topic_pca_lemmas
+```
+
+Stanza's Serbian models are downloaded only when
+`--allow-lemma-download` is supplied. Lemmatized episode text and stop words
+are cached and reused when the input corpus and preprocessing versions match.
+The lemmatizer defaults to CPU because Stanza's Serbian POS model is not
+reliable on Apple MPS; override it with `--lemma-device` if needed.
 
 ## Scene search
 
